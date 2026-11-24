@@ -54,33 +54,72 @@ Playwright MCP provides a separate browser for interactive inspection.
 
 ## Environment variables
 
-Use `.env.example` as the template for a local `.env.local` file when provider
-integrations are added. The dashboard demo runs without credentials.
+Use `.env.example` as the template for a local `.env.local` file. The dashboard
+demo runs without credentials.
 
-| Variable         | Planned use                  |
-| ---------------- | ---------------------------- |
-| `GEMINI_API_KEY` | Gemini knowledge generation. |
-| `TAVILY_API_KEY` | Tavily retrieval.            |
+| Variable            | Use                                                                   |
+| ------------------- | --------------------------------------------------------------------- |
+| `GEMINI_API_KEY`    | Reserved for later Gemini integration.                                |
+| `TAVILY_API_KEY`    | Required for Tavily web search and domain-restricted official docs.   |
+| `WIKIPEDIA_CONTACT` | Optional public operator email or project URL sent in the User-Agent. |
 
-Git ignores `.env.local`. Keep both keys in server-side code and omit the
+Git ignores `.env.local`. Keep keys in server-side code and omit the
 `NEXT_PUBLIC_` prefix for credentials.
+
+## Retrieval API
+
+The server-side retrieval engine can be tested independently of the dashboard.
+Send a JSON request with a query of 1 to 300 characters to the local server.
+
+```http
+POST /api/retrieve
+Content-Type: application/json
+
+{"query":"What is machine learning?"}
+```
+
+The response contains the normalized query, overall status, selected providers,
+ranked results, and provider errors. Each result carries a stable URL-based ID,
+source metadata, text evidence, and a retrieval timestamp.
+
+- General knowledge queries use Wikipedia and Tavily. Recognized technology
+  questions use the relevant official documentation registry and Tavily.
+- Software project discovery also uses GitHub repository search. A direct
+  GitHub repository identifier uses the repository metadata endpoint.
+- Official documentation search restricts Tavily to the registry's domains
+  and checks the returned HTTPS host and documentation path. The registry
+  covers React, Next.js, TypeScript, MDN, Python, and Node.js.
+- Each selected provider runs one timed request concurrently, with at most three
+  requests per retrieval. The service considers up to five results per provider
+  and returns up to twelve. A missing key disables both Tavily-backed providers.
+
+Duplicate detection ignores URL fragments, trailing slashes, tracking
+parameters, and query parameter order. It retains the winning provider's URL
+and metadata, preferring the stronger source type and then the longer snippet.
+Distinct URLs can remain even when their titles match. Ranking uses a 0–1
+heuristic score based on query-term coverage (68%, with title matches weighted
+more heavily), source type (22%), and bounded evidence length (10%).
+
+HTTP `200` includes successful empty searches and partial results. Invalid JSON
+or queries return `400`, oversized bodies return `413`, and other content types
+return `415`. Complete failures return `502` for upstream failures, `503` for
+unavailable or rate-limited retrieval, or `504` when all selected providers time out.
 
 ## Status and planned phases
 
-Phase 3 adds the interactive Cytoscape graph to the responsive Knowledge
-Explorer dashboard. Search opens a local machine learning example. Select and
-drag concepts, pan and zoom the graph, or browse concepts with the keyboard.
-Fit shows the current layout and Reset restores its starting positions.
-Vitest and Chromium tests cover the graph and dashboard.
+Phase 4 adds server-side multi-source retrieval and an isolated API. The
+interactive Cytoscape dashboard still uses the local machine learning example.
+Vitest uses mocked provider responses, and Chromium tests cover the dashboard
+and graph.
 
 The proposed ten-phase roadmap is:
 
 1. Audit and stabilize the project foundation.
 2. Set up the application shell and topic search UI.
 3. Render, navigate, and select concepts with Cytoscape.js.
-4. Define and validate search and expansion data contracts.
+4. Retrieve, normalize, deduplicate, and rank evidence from multiple sources.
 5. Generate topic explanations and related concepts with Gemini.
-6. Retrieve supporting sources and show citations.
+6. Show supporting sources and citations.
 7. Orchestrate search and concept expansion with LangGraph.js.
 8. Save and restore recent explorations locally.
 9. Improve accessibility, error handling, and feature test coverage.
