@@ -37,11 +37,13 @@ const server = setupServer();
 
 beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 beforeEach(() => {
+  vi.spyOn(console, "info").mockImplementation(() => undefined);
   vi.stubEnv("GEMINI_API_KEY", geminiKey);
   vi.stubEnv("GEMINI_MODEL", undefined);
   vi.stubEnv("TAVILY_API_KEY", tavilyKey);
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   server.resetHandlers();
   vi.unstubAllEnvs();
 });
@@ -139,6 +141,17 @@ test("runs the actual SDK transport against mocks and returns grounded knowledge
     body.knowledge.sources[0].id,
   ]);
   expect(generate).toHaveBeenCalledTimes(1);
+  expect(
+    vi.mocked(console.info).mock.calls.map(([event]) => event.stage),
+  ).toEqual([
+    "analyzeQuery",
+    "routeSources",
+    "retrieveEvidence",
+    "processEvidence",
+    "generateKnowledge",
+    "validateKnowledge",
+    "finalizeResponse",
+  ]);
 });
 
 test.each(["   ", "x".repeat(301)])(

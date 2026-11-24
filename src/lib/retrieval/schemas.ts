@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const maxQueryLength = 300;
 export const maxEvidenceLength = 2_000;
+export const maxRetrievalResults = 12;
 
 export const retrievalRequestSchema = z.strictObject({
   query: z.string().max(maxQueryLength).trim().min(1),

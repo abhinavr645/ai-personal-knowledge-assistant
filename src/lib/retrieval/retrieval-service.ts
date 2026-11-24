@@ -3,7 +3,7 @@ import "server-only";
 import { providers as defaultProviders } from "./provider-registry";
 import { analyzeQuery, type QueryAnalysis } from "./query-analyzer";
 import { rankResults } from "./ranking";
-import { retrievalRequestSchema } from "./schemas";
+import { maxRetrievalResults, retrievalRequestSchema } from "./schemas";
 import { ProviderFailure } from "./server-http";
 import type {
   ProviderId,
@@ -14,7 +14,6 @@ import type {
 } from "./types";
 
 const resultsPerProvider = 5;
-const maxResults = 12;
 
 const errorMessages: Record<RetrievalError["code"], string> = {
   unavailable: "The provider is unavailable or has no valid credentials.",
@@ -99,15 +98,14 @@ async function runProvider(
   }
 }
 
-export function createRetrievalService(
+export function createAnalyzedRetrievalService(
   registry: Readonly<Record<ProviderId, RetrievalProvider>> = defaultProviders,
 ) {
-  return async function retrieve(
-    input: unknown,
+  return async function retrieveAnalyzed(
+    analysis: QueryAnalysis,
     signal?: AbortSignal,
   ): Promise<RetrievalResponse> {
-    const { query } = retrievalRequestSchema.parse({ query: input });
-    const analysis = analyzeQuery(query);
+    const { query } = analysis;
     const retrievedAt = new Date().toISOString();
 
     // The router selects at most three providers, each with one bounded request.
@@ -120,7 +118,7 @@ export function createRetrievalService(
     const results = rankResults(
       query,
       runs.flatMap((run) => run.results),
-    ).slice(0, maxResults);
+    ).slice(0, maxRetrievalResults);
 
     return {
       query,
@@ -137,4 +135,15 @@ export function createRetrievalService(
   };
 }
 
+export function createRetrievalService(
+  registry: Readonly<Record<ProviderId, RetrievalProvider>> = defaultProviders,
+) {
+  const run = createAnalyzedRetrievalService(registry);
+  return async (input: unknown, signal?: AbortSignal) => {
+    const { query } = retrievalRequestSchema.parse({ query: input });
+    return run(analyzeQuery(query), signal);
+  };
+}
+
+export const retrieveAnalyzed = createAnalyzedRetrievalService();
 export const retrieve = createRetrievalService();

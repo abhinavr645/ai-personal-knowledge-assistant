@@ -2,7 +2,12 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { retrievalRequestSchema } from "@/lib/retrieval/schemas";
-import { buildEvidence, type KnowledgeSource } from "./evidence-builder";
+import type { z } from "zod";
+import {
+  buildEvidence,
+  type KnowledgeSource,
+  type PreparedEvidence,
+} from "./evidence-builder";
 import { GenerationFailure } from "./errors";
 import type { GeminiClient } from "./gemini-client";
 import {
@@ -13,19 +18,15 @@ import {
 import {
   knowledgeJsonSchema,
   modelKnowledgeSchema,
+  type generationDraftSchema,
+  type knowledgeResultSchema,
   type ModelKnowledge,
 } from "./schemas";
 
 type Explanation = NonNullable<ModelKnowledge["explanation"]>;
 
-export interface GeneratedKnowledge {
-  evidenceStatus: Exclude<ModelKnowledge["evidenceStatus"], "insufficient">;
-  evidenceNote: string;
-  explanation: Explanation;
-  concepts: ModelKnowledge["concepts"];
-  relationships: ModelKnowledge["relationships"];
-  sources: KnowledgeSource[];
-}
+export type GenerationResult = z.infer<typeof knowledgeResultSchema>;
+export type GenerationDraft = z.infer<typeof generationDraftSchema>;
 
 function stableId(kind: "concept" | "relationship", fields: string[]) {
   return `${kind}-${createHash("sha256").update(JSON.stringify(fields)).digest("hex").slice(0, 24)}`;
@@ -83,7 +84,7 @@ function normalizeGraph(
 function citedSources(
   explanation: Explanation,
   model: ModelKnowledge,
-  known: ReadonlyMap<string, KnowledgeSource>,
+  known: PreparedEvidence["sources"],
 ) {
   const statements = [
     explanation.summary,
@@ -96,33 +97,30 @@ function citedSources(
   const cited = new Map<string, KnowledgeSource>();
   for (const { sourceIds } of statements) {
     for (const id of sourceIds) {
-      const source = known.get(id);
-      if (!source) throw new GenerationFailure("invalid_source_references");
-      cited.set(id, source);
+      if (!Object.hasOwn(known, id))
+        throw new GenerationFailure("invalid_source_references");
+      cited.set(id, known[id]);
     }
   }
   return [...cited.values()];
 }
 
-export async function generateKnowledge(
-  topic: string,
-  results: readonly unknown[],
+export function noEvidenceResult(): GenerationResult {
+  return {
+    status: "insufficient_evidence",
+    knowledge: null,
+    generation: null,
+    evidenceCount: 0,
+    message: "No usable evidence was retrieved for this topic.",
+  };
+}
+
+export async function requestKnowledge(
+  query: string,
+  evidence: PreparedEvidence,
   client: GeminiClient,
   signal?: AbortSignal,
-) {
-  const query = retrievalRequestSchema.shape.query.parse(topic);
-  const evidence = buildEvidence(results);
-  const evidenceCount = evidence.items.length;
-  if (!evidenceCount) {
-    return {
-      status: "insufficient_evidence" as const,
-      knowledge: null,
-      generation: null,
-      evidenceCount,
-      message: "No usable evidence was retrieved for this topic.",
-    };
-  }
-
+): Promise<GenerationDraft> {
   const raw = await client.generateJson(
     {
       systemInstruction: knowledgeInstructions,
@@ -131,10 +129,17 @@ export async function generateKnowledge(
     },
     signal,
   );
+  return { raw, generation: { model: client.model, promptVersion } };
+}
+
+export function validateKnowledge(
+  { raw, generation }: GenerationDraft,
+  evidence: PreparedEvidence,
+): GenerationResult {
+  const evidenceCount = evidence.items.length;
   const parsed = modelKnowledgeSchema.safeParse(raw);
   if (!parsed.success) throw new GenerationFailure("invalid_generated_schema");
   const model = parsed.data;
-  const generation = { model: client.model, promptVersion };
 
   if (model.evidenceStatus === "insufficient") {
     if (
@@ -160,7 +165,7 @@ export async function generateKnowledge(
     throw new GenerationFailure("invalid_generated_schema");
   }
 
-  const knowledge: GeneratedKnowledge = {
+  const knowledge = {
     evidenceStatus: model.evidenceStatus,
     evidenceNote: model.evidenceNote,
     explanation: model.explanation,
@@ -168,4 +173,19 @@ export async function generateKnowledge(
     sources: citedSources(model.explanation, model, evidence.sources),
   };
   return { status: "ok" as const, knowledge, generation, evidenceCount };
+}
+
+export async function generateKnowledge(
+  topic: string,
+  results: readonly unknown[],
+  client: GeminiClient,
+  signal?: AbortSignal,
+): Promise<GenerationResult> {
+  const query = retrievalRequestSchema.shape.query.parse(topic);
+  const evidence = buildEvidence(results);
+  if (!evidence.items.length) return noEvidenceResult();
+  return validateKnowledge(
+    await requestKnowledge(query, evidence, client, signal),
+    evidence,
+  );
 }

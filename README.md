@@ -108,9 +108,10 @@ unavailable or rate-limited retrieval, or `504` when all selected providers time
 
 ## Structured knowledge API
 
-`POST /api/search` accepts the same JSON query as `/api/retrieve`. The server
-checks its Gemini configuration, runs the selected retrieval providers, and
-passes usable evidence to the Google GenAI SDK (3.6.1). The default model is
+`POST /api/search` accepts the same JSON query as `/api/retrieve`. After request
+validation, the server checks its Gemini configuration and invokes the compiled
+LangGraph workflow. The workflow passes usable evidence to the Google GenAI
+SDK (3.6.1). The default model is
 [Gemini 3.8 Flash](https://aistudio.google.com/docs/models/gemini-3.8-flash).
 Choose a model that supports structured JSON when setting `GEMINI_MODEL`.
 
@@ -139,9 +140,54 @@ or retrieval finds no usable evidence. Source validation verifies the identity
 of each citation. The accuracy and interpretation of generated claims still
 require review.
 
+## Search workflow
+
+LangGraph.js 1.7.5 runs the search pipeline on the server. The route returns the
+finalized Phase 5 response with the same status codes, citations, and retrieval
+metadata. The standalone retrieval endpoint executes the same provider service
+directly.
+
+```mermaid
+flowchart TD
+  Start([Start]) --> Analyze[analyzeQuery]
+  Analyze --> Route[routeSources]
+  Route --> Retrieve[retrieveEvidence]
+  Retrieve -->|Complete or partial retrieval| Process[processEvidence]
+  Retrieve -->|Complete failure| Finalize[finalizeResponse]
+  Process -->|Usable evidence| Generate[generateKnowledge]
+  Process -->|Empty evidence or failure| Finalize
+  Generate -->|Model response| Validate[validateKnowledge]
+  Generate -->|Generation failure| Finalize
+  Validate -->|Validated, insufficient, or invalid| Finalize
+  Finalize --> End([End])
+```
+
+- Classification and routing use the Phase 4 rules for general knowledge,
+  technology, software discovery, and direct repository queries. Retrieval
+  receives the selected plan and runs its existing concurrent provider calls,
+  deduplication, and ranking once.
+- Evidence processing revalidates and bounds ranked results using the Phase 5
+  evidence builder. Generation and validation reuse the existing prompt,
+  Gemini client, Zod schema, endpoint checks, and citation reconstruction.
+- Zod-backed state channels hold the query, classified plan, provider metadata,
+  and the payload for the current stage. Prepared evidence replaces the raw
+  results, and validation clears the draft and evidence. The output channel
+  returns only the finalized response. The Gemini client travels in request
+  context so credentials stay outside state.
+- Each request makes at most one Gemini attempt. Missing credentials are
+  checked before retrieval. Expected failures and unexpected exceptions return
+  fixed messages, and completed retrieval metadata is retained alongside
+  generation failures. Request cancellation and the existing provider and
+  model deadlines bound external work.
+- Stage logs record timings, statuses, provider names, counts, and safe error
+  codes. Searches stop before dispatch when LangSmith tracing or LangChain
+  verbose logging is enabled in the server environment. These framework
+  diagnostics can capture query and evidence payloads. Run `pnpm test` for mock-based workflow and API tests and
+  `pnpm exec playwright test` for the dashboard and graph regression tests.
+
 ## Status and planned phases
 
-Phase 5 adds server-side Gemini generation over retrieved evidence. The
+Phase 6 orchestrates retrieval and Gemini generation with LangGraph. The
 interactive Cytoscape dashboard still uses the local machine learning example.
 Vitest uses mocked provider and Gemini responses, and Chromium tests cover the
 dashboard and graph.
@@ -153,8 +199,8 @@ The proposed ten-phase roadmap is:
 3. Render, navigate, and select concepts with Cytoscape.js.
 4. Retrieve, normalize, deduplicate, and rank evidence from multiple sources.
 5. Generate topic explanations and related concepts with Gemini.
-6. Show supporting sources and citations.
-7. Orchestrate search and concept expansion with LangGraph.js.
+6. Orchestrate server-side search with LangGraph.js.
+7. Connect the dashboard to structured search results and citations.
 8. Save and restore recent explorations locally.
 9. Improve accessibility, error handling, and feature test coverage.
 10. Verify production readiness and deploy to Vercel.

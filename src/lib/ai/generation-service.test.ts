@@ -37,7 +37,7 @@ test("maps vetted metadata exactly and deduplicates stable source IDs", () => {
       text: original.content.text,
     },
   ]);
-  expect(build.sources.get(sourceId)).toMatchObject({
+  expect(build.sources[sourceId]).toMatchObject({
     id: sourceId,
     title: original.title,
     url: original.source.url,
@@ -66,7 +66,7 @@ test("bounds evidence count, UTF-8 bytes, and individual excerpts", () => {
     maxEvidenceBytes,
   );
   expect(build.items.every(({ text }) => text.length <= 1600)).toBe(true);
-  expect(build.sources.size).toBe(build.items.length);
+  expect(Object.keys(build.sources)).toHaveLength(build.items.length);
 });
 
 test("drops malformed rows and returns an empty evidence context when none are usable", () => {
@@ -76,9 +76,7 @@ test("drops malformed rows and returns an empty evidence context when none are u
   };
   const invalidTimestamp = { ...evidenceItem(), retrievedAt: "made-up-time" };
   expect(buildEvidence([]).items).toEqual([]);
-  expect(buildEvidence([{}, invalidUrl, invalidTimestamp]).sources.size).toBe(
-    0,
-  );
+  expect(buildEvidence([{}, invalidUrl, invalidTimestamp]).sources).toEqual({});
   expect(buildEvidence([invalidUrl, evidenceItem()]).items).toHaveLength(1);
 });
 

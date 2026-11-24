@@ -44,12 +44,20 @@ const documentationSources = [
   },
 ] as const;
 
-export type DocumentationSource = (typeof documentationSources)[number];
+export const documentationSourceSchema = z.object({
+  name: z.string(),
+  url: z.url(),
+  host: z.string(),
+});
+
+export type DocumentationSource = z.infer<typeof documentationSourceSchema>;
 
 export function matchDocumentation(
   query: string,
 ): readonly DocumentationSource[] {
-  return documentationSources.filter((source) => source.topics.test(query));
+  return documentationSources
+    .filter((source) => source.topics.test(query))
+    .map(({ name, url, host }) => ({ name, url, host }));
 }
 
 export function documentationForUrl(
@@ -57,10 +65,12 @@ export function documentationForUrl(
   sources: readonly DocumentationSource[],
 ) {
   const url = new URL(value);
-  return sources.find(
+  return documentationSources.find(
     (source) =>
       url.protocol === "https:" &&
       url.host === source.host &&
+      sources.some(({ host }) => host === source.host) &&
       source.paths.test(url.pathname),
   );
 }
+import { z } from "zod";

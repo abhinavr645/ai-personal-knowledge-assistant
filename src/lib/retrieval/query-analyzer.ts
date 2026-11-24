@@ -1,7 +1,9 @@
+import { z } from "zod";
 import {
+  documentationSourceSchema,
   matchDocumentation,
-  type DocumentationSource,
 } from "./official-sources";
+import { providerIdSchema, retrievalRequestSchema } from "./schemas";
 import type { ProviderId } from "./types";
 
 const queryStopWords = new Set(
@@ -20,13 +22,28 @@ export function queryTerms(text: string): string[] {
   return [...new Set(words.filter((word) => !queryStopWords.has(word)))];
 }
 
-export interface QueryAnalysis {
-  query: string;
+export const queryClassificationSchema = z.object({
+  query: retrievalRequestSchema.shape.query,
+  category: z.enum([
+    "general",
+    "technical",
+    "software_discovery",
+    "direct_repository",
+  ]),
+  documentationSources: z.array(documentationSourceSchema).readonly(),
+  repository: z.object({ owner: z.string(), name: z.string() }).optional(),
+  repositoryQuery: z.string().optional(),
+});
+
+export const selectedProvidersSchema = z
+  .array(providerIdSchema)
+  .min(1)
+  .max(3)
+  .refine((providers) => new Set(providers).size === providers.length);
+type QueryClassification = z.infer<typeof queryClassificationSchema>;
+export type QueryAnalysis = QueryClassification & {
   providers: readonly ProviderId[];
-  documentationSources: readonly DocumentationSource[];
-  repository?: { owner: string; name: string };
-  repositoryQuery?: string;
-}
+};
 
 const repositoryPattern =
   /^(?:https:\/\/github\.com\/)?([a-z0-9][a-z0-9-]{0,38})\/([a-z0-9_.-]{1,100})\/?$/i;
@@ -38,7 +55,7 @@ const softwareTerms =
   /\b(?:npm|pip|sdk|programming|code|software|developer|frameworks?|github)\b/i;
 const documentationTerms = /\b(?:docs|documentation|official reference)\b/i;
 
-export function analyzeQuery(query: string): QueryAnalysis {
+export function classifyQuery(query: string): QueryClassification {
   const trimmed = query.trim();
   const [, owner, name] = repositoryPattern.exec(trimmed) ?? [];
   const repository =
@@ -47,11 +64,12 @@ export function analyzeQuery(query: string): QueryAnalysis {
       : undefined;
   const candidates = matchDocumentation(trimmed);
   const technology = candidates.length > 0;
+  const technical = technology || softwareTerms.test(trimmed);
   const discoveringProjects =
     projectTerms.test(trimmed) &&
     (discoveryTerms.test(trimmed) ||
       /\b(?:github|repos?|repositories|repository)\b/i.test(trimmed)) &&
-    (technology || softwareTerms.test(trimmed));
+    technical;
   const repositoryQuery =
     discoveringProjects && !repository
       ? queryTerms(trimmed)
@@ -63,23 +81,36 @@ export function analyzeQuery(query: string): QueryAnalysis {
     (!discoveringProjects && !repository) || documentationTerms.test(trimmed)
       ? candidates
       : [];
-  const providers: ProviderId[] = ["tavily"];
-
-  if (documentationSources.length) providers.unshift("official-docs");
-  else if (
-    !repository &&
-    !repositoryQuery &&
-    !technology &&
-    !softwareTerms.test(trimmed)
-  )
-    providers.unshift("wikipedia");
-  if (repository || repositoryQuery) providers.push("github");
-
+  const category = repository
+    ? "direct_repository"
+    : repositoryQuery
+      ? "software_discovery"
+      : technical
+        ? "technical"
+        : "general";
   return {
     query: trimmed,
-    providers,
+    category,
     documentationSources,
     repository,
     repositoryQuery,
   };
+}
+
+export function routeSources(analysis: QueryClassification): ProviderId[] {
+  const providers: ProviderId[] = ["tavily"];
+
+  if (analysis.documentationSources.length) providers.unshift("official-docs");
+  else if (analysis.category === "general") providers.unshift("wikipedia");
+  if (
+    analysis.category === "direct_repository" ||
+    analysis.category === "software_discovery"
+  )
+    providers.push("github");
+  return providers;
+}
+
+export function analyzeQuery(query: string): QueryAnalysis {
+  const analysis = classifyQuery(query);
+  return { ...analysis, providers: routeSources(analysis) };
 }

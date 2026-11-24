@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { knowledgeSourceSchema, maxEvidenceItems } from "./evidence-builder";
 
 const plainText = (max: number, min = 1) =>
   z
@@ -75,6 +76,34 @@ export const modelKnowledgeSchema = z.strictObject({
 });
 
 export type ModelKnowledge = z.infer<typeof modelKnowledgeSchema>;
+
+const generationMetadata = z.object({
+  model: z.string(),
+  promptVersion: z.string(),
+});
+export const generationDraftSchema = z.object({
+  raw: z.unknown(),
+  generation: generationMetadata,
+});
+export const knowledgeResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ok"),
+    knowledge: modelKnowledgeSchema.extend({
+      evidenceStatus: z.enum(["sufficient", "limited"]),
+      explanation,
+      sources: z.array(knowledgeSourceSchema).max(maxEvidenceItems),
+    }),
+    generation: generationMetadata,
+    evidenceCount: z.number().int().min(1).max(maxEvidenceItems),
+  }),
+  z.object({
+    status: z.literal("insufficient_evidence"),
+    knowledge: z.null(),
+    generation: generationMetadata.nullable(),
+    evidenceCount: z.number().int().min(0).max(maxEvidenceItems),
+    message: z.string(),
+  }),
+]);
 
 // Gemini supports a subset of JSON Schema. Keep local Zod string constraints
 // and semantic checks authoritative while sending the supported shape.
