@@ -29,7 +29,7 @@ pnpm exec playwright install chromium
 pnpm dev
 ```
 
-The starter page is available at [localhost:3000](http://localhost:3000).
+The dashboard is available at [localhost:3000](http://localhost:3000).
 On Linux CI, use `pnpm exec playwright install --with-deps chromium` when
 Chromium's system dependencies also need to be installed.
 
@@ -44,7 +44,7 @@ Chromium's system dependencies also need to be installed.
 | `pnpm format:check` | Check formatting.                                              |
 | `pnpm test`         | Run Vitest unit and component tests once.                      |
 | `pnpm test:watch`   | Watch for changes with Vitest.                                 |
-| `pnpm test:e2e`     | Smoke-test the starter page in Chromium.                       |
+| `pnpm test:e2e`     | Test the dashboard in Chromium.                                |
 | `pnpm build`        | Create a production build.                                     |
 | `pnpm start`        | Serve the production build on port 3000.                       |
 
@@ -55,7 +55,7 @@ Playwright MCP provides a separate browser for interactive inspection.
 ## Environment variables
 
 Use `.env.example` as the template for a local `.env.local` file when provider
-integrations are added. Phase 1 runs without credentials.
+integrations are added. The dashboard demo runs without credentials.
 
 | Variable         | Planned use                  |
 | ---------------- | ---------------------------- |
@@ -67,9 +67,10 @@ Git ignores `.env.local`. Keep both keys in server-side code and omit the
 
 ## Status and planned phases
 
-Phase 1 keeps the starter page and establishes dependency, formatting,
-type-checking, and test tooling. The current tests cover a Base UI button and
-loading the starter page in Chromium.
+Phase 2 adds the responsive Knowledge Explorer dashboard. Search opens a local
+machine learning example with a selectable graph, sample explanation, and concept
+details. The sidebar contains example explorations, and preferences apply to the
+current page session. Vitest and Chromium tests cover these interactions.
 
 The proposed ten-phase roadmap is:
 
