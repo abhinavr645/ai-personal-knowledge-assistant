@@ -59,7 +59,8 @@ demo runs without credentials.
 
 | Variable            | Use                                                                   |
 | ------------------- | --------------------------------------------------------------------- |
-| `GEMINI_API_KEY`    | Reserved for later Gemini integration.                                |
+| `GEMINI_API_KEY`    | Required on the server for `POST /api/search`.                        |
+| `GEMINI_MODEL`      | Optional Gemini model override. Defaults to `gemini-3.8-flash`.       |
 | `TAVILY_API_KEY`    | Required for Tavily web search and domain-restricted official docs.   |
 | `WIKIPEDIA_CONTACT` | Optional public operator email or project URL sent in the User-Agent. |
 
@@ -105,12 +106,45 @@ or queries return `400`, oversized bodies return `413`, and other content types
 return `415`. Complete failures return `502` for upstream failures, `503` for
 unavailable or rate-limited retrieval, or `504` when all selected providers time out.
 
+## Structured knowledge API
+
+`POST /api/search` accepts the same JSON query as `/api/retrieve`. The server
+checks its Gemini configuration, runs the selected retrieval providers, and
+passes usable evidence to the Google GenAI SDK (3.6.1). The default model is
+[Gemini 3.8 Flash](https://aistudio.google.com/docs/models/gemini-3.8-flash).
+Choose a model that supports structured JSON when setting `GEMINI_MODEL`.
+
+- The evidence builder revalidates provider records and sends up to six sources,
+  with at most 1,600 characters per excerpt and 12,000 UTF-8 bytes for the
+  serialized evidence array. The versioned system instruction treats the query
+  and retrieved text as untrusted data.
+- Gemini gets one attempt, a 20-second deadline, and an output budget of 6,144
+  tokens. The service caps decoded model text at 32 KiB, parses the JSON and
+  validates it with Zod.
+- A successful response includes a title, summary, detail, sections, takeaways,
+  concepts, relationships, and citations. Claims distinguish evidence from
+  synthesis. The service checks relationship endpoints and source IDs,
+  assigns stable graph IDs, and builds citations from the supplied retrieval
+  records. It retains the original canonical URLs and available source metadata.
+
+Successful and insufficient-evidence responses use HTTP `200`. The latter
+returns `status: "insufficient_evidence"` and `knowledge: null`. Successful
+generation includes the model and prompt version. The response reports
+retrieval status and provider errors separately from generated knowledge.
+
+Both endpoints share request validation. Search returns fixed error codes and
+messages for retrieval failure, credential errors, quotas, timeouts, and
+invalid generated data. Generation is skipped when configuration is missing
+or retrieval finds no usable evidence. Source validation verifies the identity
+of each citation. The accuracy and interpretation of generated claims still
+require review.
+
 ## Status and planned phases
 
-Phase 4 adds server-side multi-source retrieval and an isolated API. The
+Phase 5 adds server-side Gemini generation over retrieved evidence. The
 interactive Cytoscape dashboard still uses the local machine learning example.
-Vitest uses mocked provider responses, and Chromium tests cover the dashboard
-and graph.
+Vitest uses mocked provider and Gemini responses, and Chromium tests cover the
+dashboard and graph.
 
 The proposed ten-phase roadmap is:
 
