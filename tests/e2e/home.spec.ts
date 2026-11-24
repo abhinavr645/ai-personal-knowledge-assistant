@@ -26,6 +26,7 @@ test("searches the dashboard and explores concepts", async ({ page }) => {
     page.getByRole("heading", { name: "How machine learning works" }),
   ).toBeVisible();
 
+  await graph.getByText("Browse concepts").click();
   const neuralNetworks = graph.getByRole("button", { name: "Neural Networks" });
   await neuralNetworks.focus();
   await neuralNetworks.press("Enter");
@@ -77,14 +78,7 @@ test("supports mobile navigation, settings, and reset without page overflow", as
   );
 
   await page.setViewportSize({ width: 320, height: 720 });
-  const graphNodes = page
-    .getByRole("region", { name: "Knowledge graph" })
-    .getByRole("button");
-  expect(
-    await graphNodes.evaluateAll((nodes) =>
-      nodes.every((node) => node.scrollWidth <= node.clientWidth),
-    ),
-  ).toBe(true);
+  await expect(page.getByRole("button", { name: "Fit graph" })).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     320,
   );

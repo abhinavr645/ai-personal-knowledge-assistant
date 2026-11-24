@@ -15,13 +15,18 @@ function setup() {
   };
 }
 
-test("renders the workspace, graph preview, and empty details", () => {
-  const { graph, details } = setup();
+test("renders the workspace, graph concepts, and empty details", async () => {
+  const { user, graph, details } = setup();
 
   expect(
     screen.getByRole("heading", { name: "Knowledge Explorer" }),
   ).toBeVisible();
-  expect(graph.getAllByRole("button")).toHaveLength(7);
+  await user.click(graph.getByText("Browse concepts"));
+  expect(
+    within(graph.getByRole("list", { name: "Graph concepts" })).getAllByRole(
+      "button",
+    ),
+  ).toHaveLength(7);
   expect(
     graph.getByText("Deep Learning builds on Neural Networks"),
   ).toBeInTheDocument();
@@ -60,6 +65,7 @@ test("loads a sample answer and updates details from graph and related concept b
     details.getByRole("heading", { name: "Machine Learning" }),
   ).toBeVisible();
 
+  await user.click(graph.getByText("Browse concepts"));
   await user.click(graph.getByRole("button", { name: "Neural Networks" }));
   expect(
     graph.getByRole("button", { name: "Neural Networks", pressed: true }),
@@ -82,6 +88,7 @@ test("reopens a mock recent entry and resets the exploration", async () => {
   );
 
   await user.click(navigation.getByRole("button", { name: "Deep Learning" }));
+  await user.click(graph.getByText("Browse concepts"));
   expect(
     navigation.getByRole("button", { name: "Deep Learning", current: true }),
   ).toBeVisible();

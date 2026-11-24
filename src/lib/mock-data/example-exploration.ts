@@ -127,6 +127,16 @@ export const exampleExploration: Exploration = {
   },
 };
 
+export const exampleGraphPositions = {
+  "artificial-intelligence": { x: 0, y: -112 },
+  "machine-learning": { x: 0, y: 0 },
+  "neural-networks": { x: -232, y: -36 },
+  "deep-learning": { x: -232, y: 104 },
+  "supervised-learning": { x: 236, y: -88 },
+  "unsupervised-learning": { x: 236, y: 4 },
+  "reinforcement-learning": { x: 236, y: 104 },
+};
+
 export const exampleEntries = [
   {
     nodeId: "machine-learning",

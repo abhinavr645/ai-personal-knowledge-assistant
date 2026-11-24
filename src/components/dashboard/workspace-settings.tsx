@@ -35,7 +35,7 @@ export function WorkspaceSettings({
             </Dialog.Close>
           </div>
           <Dialog.Description className="mt-1 text-sm leading-relaxed text-muted-foreground">
-            Choose what to display in the graph preview.
+            Choose what to display in the knowledge graph.
           </Dialog.Description>
           <label className="mt-5 flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-border px-3 py-3 text-sm">
             Show relationship labels

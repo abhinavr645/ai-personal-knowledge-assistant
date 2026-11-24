@@ -67,17 +67,18 @@ Git ignores `.env.local`. Keep both keys in server-side code and omit the
 
 ## Status and planned phases
 
-Phase 2 adds the responsive Knowledge Explorer dashboard. Search opens a local
-machine learning example with a selectable graph, sample explanation, and concept
-details. The sidebar contains example explorations, and preferences apply to the
-current page session. Vitest and Chromium tests cover these interactions.
+Phase 3 adds the interactive Cytoscape graph to the responsive Knowledge
+Explorer dashboard. Search opens a local machine learning example. Select and
+drag concepts, pan and zoom the graph, or browse concepts with the keyboard.
+Fit shows the current layout and Reset restores its starting positions.
+Vitest and Chromium tests cover the graph and dashboard.
 
 The proposed ten-phase roadmap is:
 
 1. Audit and stabilize the project foundation.
 2. Set up the application shell and topic search UI.
-3. Define and validate graph and search data contracts.
-4. Render concepts and relationships with Cytoscape.js.
+3. Render, navigate, and select concepts with Cytoscape.js.
+4. Define and validate search and expansion data contracts.
 5. Generate topic explanations and related concepts with Gemini.
 6. Retrieve supporting sources and show citations.
 7. Orchestrate search and concept expansion with LangGraph.js.

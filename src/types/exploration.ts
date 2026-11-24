@@ -27,10 +27,13 @@ export interface TopicAnswer {
   sources: SourceReference[];
 }
 
-export interface Exploration {
+export interface GraphData {
+  nodes: readonly GraphNode[];
+  edges: readonly GraphEdge[];
+}
+
+export interface Exploration extends GraphData {
   query: string;
   rootNodeId: string;
-  nodes: GraphNode[];
-  edges: GraphEdge[];
   answer: TopicAnswer;
 }

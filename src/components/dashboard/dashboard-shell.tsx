@@ -3,13 +3,14 @@
 import { useRef, useState } from "react";
 import {
   exampleExploration,
+  exampleGraphPositions,
   searchExample,
 } from "@/lib/mock-data/example-exploration";
 import type { Exploration } from "@/types/exploration";
 import { AnswerPanel } from "./answer-panel";
 import { DashboardHeader } from "./dashboard-header";
 import { DashboardSidebar, type SidebarActions } from "./dashboard-sidebar";
-import { KnowledgeGraphPreview } from "./knowledge-graph-preview";
+import { KnowledgeGraph } from "./knowledge-graph";
 import { SelectedTopicPanel } from "./selected-topic-panel";
 import { TopicSearch } from "./topic-search";
 import { WorkspaceSettings } from "./workspace-settings";
@@ -20,6 +21,7 @@ export function DashboardShell() {
   const [searching, setSearching] = useState(false);
   const [exploration, setExploration] = useState<Exploration | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [graphResetRevision, setGraphResetRevision] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
@@ -58,6 +60,7 @@ export function DashboardShell() {
     setQuery("");
     setExploration(null);
     setSelectedId(null);
+    setGraphResetRevision((revision) => revision + 1);
     focusSearch();
   }
 
@@ -155,8 +158,10 @@ export function DashboardShell() {
             onSearch={search}
           />
           <div className="grid min-w-0 gap-4 sm:gap-5 min-[1120px]:grid-cols-[minmax(0,1fr)_18rem] min-[1450px]:grid-cols-[minmax(0,1fr)_20rem]">
-            <KnowledgeGraphPreview
+            <KnowledgeGraph
               graph={graph}
+              layoutHints={exampleGraphPositions}
+              resetRevision={graphResetRevision}
               selectedId={selectedId}
               showLabels={showLabels}
               isExample={!exploration}
