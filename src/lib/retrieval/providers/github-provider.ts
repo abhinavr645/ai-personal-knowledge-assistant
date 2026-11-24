@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { normalizeResults } from "../normalize-results";
 import { httpUrlSchema } from "../schemas";
-import { ProviderFailure, readBoundedJson, requestJson } from "../server-http";
+import { readBoundedJson } from "@/lib/bounded-json";
+import { ProviderFailure, requestJson } from "../server-http";
 import type { RetrievalProvider } from "../types";
 
 const repositories = z.object({ items: z.array(z.unknown()) });

@@ -1,13 +1,11 @@
 import "server-only";
 
+import type { z } from "zod";
 import {
   maxQueryLength,
   retrievalRequestSchema,
 } from "@/lib/retrieval/schemas";
-import {
-  BodyTooLargeError,
-  readBoundedJson,
-} from "@/lib/retrieval/server-http";
+import { BodyTooLargeError, readBoundedJson } from "@/lib/bounded-json";
 
 const maxBodyBytes = 4_096;
 
@@ -22,9 +20,12 @@ function errorResponse(code: string, message: string, status: number) {
   return { response: queryJson({ error: { code, message } }, status) };
 }
 
-export async function parseQueryRequest(
+export async function parseJsonRequest<T>(
   request: Request,
-): Promise<{ query: string } | { response: Response }> {
+  limit: number,
+  schema: z.ZodType<T>,
+  invalid: { code: string; message: string },
+): Promise<{ data: T } | { response: Response }> {
   const contentType = request.headers
     .get("content-type")
     ?.split(";", 1)[0]
@@ -40,12 +41,12 @@ export async function parseQueryRequest(
 
   let body: unknown;
   try {
-    body = await readBoundedJson(request, maxBodyBytes);
+    body = await readBoundedJson(request, limit);
   } catch (error) {
     if (error instanceof BodyTooLargeError) {
       return errorResponse(
         "body_too_large",
-        "The request body exceeds 4096 bytes.",
+        `The request body exceeds ${limit} bytes.`,
         413,
       );
     }
@@ -56,13 +57,24 @@ export async function parseQueryRequest(
     );
   }
 
-  const parsed = retrievalRequestSchema.safeParse(body);
+  const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return errorResponse(
-      "invalid_query",
-      `Provide a query of 1 to ${maxQueryLength} characters.`,
-      400,
-    );
+    return errorResponse(invalid.code, invalid.message, 400);
   }
-  return { query: parsed.data.query };
+  return { data: parsed.data };
+}
+
+export async function parseQueryRequest(
+  request: Request,
+): Promise<{ query: string } | { response: Response }> {
+  const parsed = await parseJsonRequest(
+    request,
+    maxBodyBytes,
+    retrievalRequestSchema,
+    {
+      code: "invalid_query",
+      message: `Provide a query of 1 to ${maxQueryLength} characters.`,
+    },
+  );
+  return "response" in parsed ? parsed : parsed.data;
 }

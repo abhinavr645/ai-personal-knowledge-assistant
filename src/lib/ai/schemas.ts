@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { knowledgeSourceSchema, maxEvidenceItems } from "./evidence-builder";
+import { knowledgeSourceSchema, maxEvidenceItems } from "./evidence-schemas";
 
 const plainText = (max: number, min = 1) =>
   z
@@ -16,6 +16,8 @@ const itemId = z
   .string()
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   .max(70);
+export const conceptIdSchema = z.string().regex(/^concept-[a-f0-9]{24}$/);
+const relationshipIdSchema = z.string().regex(/^relationship-[a-f0-9]{24}$/);
 const claim = (max: number) => ({
   text: plainText(max),
   kind: z.enum(["evidence", "synthesis"]),
@@ -85,14 +87,43 @@ export const generationDraftSchema = z.object({
   raw: z.unknown(),
   generation: generationMetadata,
 });
+
+const publicKnowledgeSchema = modelKnowledgeSchema
+  .extend({
+    evidenceStatus: z.enum(["sufficient", "limited"]),
+    explanation,
+    concepts: z.array(concept.extend({ id: conceptIdSchema })).max(8),
+    relationships: z
+      .array(
+        relationship.extend({
+          id: relationshipIdSchema,
+          sourceConceptId: conceptIdSchema,
+          targetConceptId: conceptIdSchema,
+        }),
+      )
+      .max(16),
+    sources: z.array(knowledgeSourceSchema).max(maxEvidenceItems),
+  })
+  .refine(({ explanation, concepts, relationships, sources }) => {
+    const known = new Set(sources.map(({ id }) => id));
+    const claims = [
+      explanation.summary,
+      explanation.detail,
+      ...explanation.sections,
+      ...explanation.takeaways,
+      ...concepts,
+      ...relationships,
+    ];
+    return (
+      known.size === sources.length &&
+      claims.every(({ sourceIds }) => sourceIds.every((id) => known.has(id)))
+    );
+  }, "Expected unique sources for all citation IDs");
+
 export const knowledgeResultSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("ok"),
-    knowledge: modelKnowledgeSchema.extend({
-      evidenceStatus: z.enum(["sufficient", "limited"]),
-      explanation,
-      sources: z.array(knowledgeSourceSchema).max(maxEvidenceItems),
-    }),
+    knowledge: publicKnowledgeSchema,
     generation: generationMetadata,
     evidenceCount: z.number().int().min(1).max(maxEvidenceItems),
   }),
@@ -104,14 +135,3 @@ export const knowledgeResultSchema = z.discriminatedUnion("status", [
     message: z.string(),
   }),
 ]);
-
-// Gemini supports a subset of JSON Schema. Keep local Zod string constraints
-// and semantic checks authoritative while sending the supported shape.
-export const knowledgeJsonSchema = z.toJSONSchema(modelKnowledgeSchema, {
-  override: ({ jsonSchema }) => {
-    delete jsonSchema.minLength;
-    delete jsonSchema.maxLength;
-    delete jsonSchema.pattern;
-  },
-});
-delete knowledgeJsonSchema.$schema;

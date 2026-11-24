@@ -1,5 +1,5 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { ChevronRight, FlaskConical, PanelLeft } from "lucide-react";
+import { ChevronRight, PanelLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DashboardSidebar, type SidebarActions } from "./dashboard-sidebar";
 
@@ -51,10 +51,6 @@ export function DashboardHeader({
         />
         <span className="font-medium text-foreground">Explorer</span>
       </div>
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
-        <FlaskConical size={14} aria-hidden="true" className="text-primary" />{" "}
-        Local demo
-      </span>
     </header>
   );
 }

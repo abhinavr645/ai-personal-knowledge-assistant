@@ -84,6 +84,7 @@ export function useKnowledgeGraph({
       if (resetRequested || instance.nodes().length === added.length) {
         reset(instance);
       } else if (added.nonempty()) {
+        view.current.fitted = false;
         placeAddedNodes(instance, added);
       }
     },

@@ -1,12 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import {
-  exampleExploration,
-  exampleGraphPositions,
-  searchExample,
-} from "@/lib/mock-data/example-exploration";
-import type { Exploration } from "@/types/exploration";
+import { useExploration } from "@/hooks/use-exploration";
+import { exampleGraphPositions } from "@/lib/mock-data/example-exploration";
 import { AnswerPanel } from "./answer-panel";
 import { DashboardHeader } from "./dashboard-header";
 import { DashboardSidebar, type SidebarActions } from "./dashboard-sidebar";
@@ -16,29 +12,13 @@ import { TopicSearch } from "./topic-search";
 import { WorkspaceSettings } from "./workspace-settings";
 
 export function DashboardShell() {
-  const [query, setQuery] = useState("");
-  const [invalid, setInvalid] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [exploration, setExploration] = useState<Exploration | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [graphResetRevision, setGraphResetRevision] = useState(0);
+  const exploration = useExploration();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const searchInput = useRef<HTMLInputElement>(null);
   const returnToSearch = useRef(false);
-  const requestId = useRef(0);
-
-  const graph = exploration ?? exampleExploration;
-  const node = graph.nodes.find(({ id }) => id === selectedId);
-  const relatedIds = new Set(
-    graph.edges.flatMap(({ source, target }) => {
-      if (source === selectedId) return [target];
-      if (target === selectedId) return [source];
-      return [];
-    }),
-  );
-  const related = graph.nodes.filter(({ id }) => relatedIds.has(id));
+  const { state } = exploration;
 
   function focusSearch() {
     if (sidebarOpen) {
@@ -49,68 +29,15 @@ export function DashboardShell() {
     }
   }
 
-  function cancelSearch() {
-    requestId.current += 1;
-    setSearching(false);
-    setInvalid(false);
-  }
-
-  function newExploration() {
-    cancelSearch();
-    setQuery("");
-    setExploration(null);
-    setSelectedId(null);
-    setGraphResetRevision((revision) => revision + 1);
-    focusSearch();
-  }
-
-  function openExample(
-    query: string,
-    rootNodeId: string,
-    selection = rootNodeId,
-  ) {
-    cancelSearch();
-    setQuery(query);
-    setExploration({ ...exampleExploration, query, rootNodeId });
-    setSelectedId(selection);
-  }
-
-  async function search(value: string) {
-    if (searching) return;
-    const trimmed = value.trim();
-    if (!trimmed) {
-      setInvalid(true);
-      searchInput.current?.focus();
-      return;
-    }
-
-    const currentRequest = ++requestId.current;
-    setQuery(trimmed);
-    setInvalid(false);
-    setSearching(true);
-    const result = await searchExample(trimmed);
-
-    if (currentRequest !== requestId.current) return;
-    setExploration(result);
-    setSelectedId(result.rootNodeId);
-    setSearching(false);
-  }
-
-  function selectNode(id: string) {
-    if (!exploration) {
-      openExample(exampleExploration.query, exampleExploration.rootNodeId, id);
-      return;
-    }
-
-    setSelectedId(id);
-  }
-
   const sidebar: SidebarActions = {
-    activeQuery: exploration?.query ?? null,
-    onNew: newExploration,
+    activeQuery: state.status === "ready" ? state.exploration.topic : null,
+    onNew: () => {
+      exploration.reset();
+      focusSearch();
+    },
     onNavigate: focusSearch,
-    onRecent: (entry) => {
-      openExample(entry.query, entry.nodeId);
+    onExample: (entry) => {
+      void exploration.search(entry.query);
       setSidebarOpen(false);
     },
     onSettings: () => {
@@ -147,33 +74,59 @@ export function DashboardShell() {
           className="mx-auto max-w-410 px-4 pb-12 focus:outline-none sm:px-6 lg:px-8"
         >
           <TopicSearch
-            query={query}
-            searching={searching}
-            invalid={invalid}
+            query={exploration.query}
+            pendingQuery={state.status === "loading" ? state.query : null}
+            inputError={exploration.inputError}
             inputRef={searchInput}
-            onChange={(value) => {
-              setQuery(value);
-              setInvalid(false);
+            onChange={exploration.changeQuery}
+            onSearch={(value) => {
+              void exploration.search(value);
+              if (!value.trim()) searchInput.current?.focus();
             }}
-            onSearch={search}
           />
           <div className="grid min-w-0 gap-4 sm:gap-5 min-[1120px]:grid-cols-[minmax(0,1fr)_18rem] min-[1450px]:grid-cols-[minmax(0,1fr)_20rem]">
             <KnowledgeGraph
-              graph={graph}
-              layoutHints={exampleGraphPositions}
-              resetRevision={graphResetRevision}
-              selectedId={selectedId}
+              graph={exploration.graph}
+              layoutHints={
+                state.status === "idle" ? exampleGraphPositions : undefined
+              }
+              resetRevision={exploration.resetRevision}
+              selectedId={exploration.selectedId}
               showLabels={showLabels}
-              isExample={!exploration}
-              onSelect={selectNode}
+              isExample={state.status === "idle"}
+              onSelect={exploration.selectNode}
+              expandedNodeIds={exploration.expandedNodeIds}
+              loadingNodeIds={exploration.loadingNodeIds}
+              emptyMessage={
+                state.status === "loading"
+                  ? "Searching for concepts…"
+                  : "No concepts to display."
+              }
             />
             <SelectedTopicPanel
-              node={node}
-              related={related}
-              onSelect={selectNode}
-              onExplore={(concept) => openExample(concept.name, concept.id)}
+              node={exploration.node}
+              related={exploration.related}
+              expansion={exploration.expansion}
+              sources={exploration.conceptSources}
+              canExpand={state.status === "ready"}
+              graphFull={exploration.graphFull}
+              onSelect={exploration.selectNode}
+              onExpand={exploration.expand}
             />
-            <AnswerPanel answer={exploration?.answer} searching={searching} />
+            <AnswerPanel
+              knowledge={
+                state.status === "ready"
+                  ? state.exploration.knowledge
+                  : undefined
+              }
+              searching={state.status === "loading"}
+              message={
+                state.status === "failed" || state.status === "insufficient"
+                  ? state.message
+                  : undefined
+              }
+              failed={state.status === "failed"}
+            />
           </div>
         </main>
       </div>

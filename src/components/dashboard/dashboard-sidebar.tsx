@@ -1,4 +1,4 @@
-import { Compass, History, Network, Plus, Settings, X } from "lucide-react";
+import { Compass, Lightbulb, Network, Plus, Settings, X } from "lucide-react";
 import { Dialog } from "@base-ui/react/dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +11,7 @@ export interface SidebarActions {
   activeQuery: string | null;
   onNew: () => void;
   onNavigate: () => void;
-  onRecent: (entry: ExampleEntry) => void;
+  onExample: (entry: ExampleEntry) => void;
   onSettings: () => void;
 }
 
@@ -19,11 +19,11 @@ export function DashboardSidebar({
   activeQuery,
   onNew,
   onNavigate,
-  onRecent,
+  onExample,
   onSettings,
   drawer = false,
 }: SidebarActions & { drawer?: boolean }) {
-  const hasActiveRecent = exampleEntries.some(
+  const hasActiveExample = exampleEntries.some(
     ({ query }) => query === activeQuery,
   );
 
@@ -67,24 +67,24 @@ export function DashboardSidebar({
         <Button
           variant="ghost"
           type="button"
-          aria-current={hasActiveRecent ? undefined : "page"}
+          aria-current={hasActiveExample ? undefined : "page"}
           onClick={onNavigate}
           className={cn(
             "h-10 w-full justify-start gap-2.5 px-3",
-            !hasActiveRecent && "bg-sidebar-accent text-foreground",
+            !hasActiveExample && "bg-sidebar-accent text-foreground",
           )}
         >
           <Compass
             aria-hidden="true"
             className={
-              hasActiveRecent ? "text-muted-foreground" : "text-primary"
+              hasActiveExample ? "text-muted-foreground" : "text-primary"
             }
           />{" "}
           Explorer
         </Button>
         <div className="mt-9 flex items-center gap-2 px-3 text-xs font-medium text-muted-foreground">
-          <History size={14} aria-hidden="true" />
-          <h2>Recent explorations</h2>
+          <Lightbulb size={14} aria-hidden="true" />
+          <h2>Example topics</h2>
         </div>
         <ul className="mt-2 space-y-0.5">
           {exampleEntries.map((entry) => (
@@ -98,7 +98,7 @@ export function DashboardSidebar({
                     "bg-sidebar-accent text-foreground",
                 )}
                 aria-current={activeQuery === entry.query ? "true" : undefined}
-                onClick={() => onRecent(entry)}
+                onClick={() => onExample(entry)}
               >
                 <span
                   aria-hidden="true"

@@ -1,8 +1,12 @@
+import type { Knowledge } from "@/lib/exploration/contracts";
+
 export interface GraphNode {
   id: string;
   name: string;
   description: string;
-  category: "Field" | "Method" | "Learning approach";
+  category: Knowledge["concepts"][number]["category"];
+  sourceIds?: readonly string[];
+  expandedFrom?: string;
 }
 
 export interface GraphEdge {
@@ -11,20 +15,8 @@ export interface GraphEdge {
   target: string;
   kind: "hierarchy" | "connection";
   label: string;
-}
-
-export interface SourceReference {
-  id: string;
-  label: string;
-  status: "placeholder";
-}
-
-export interface TopicAnswer {
-  title: string;
-  introduction: string;
-  sections: { title: string; text: string }[];
-  takeaways: string[];
-  sources: SourceReference[];
+  explanation?: string;
+  sourceIds?: readonly string[];
 }
 
 export interface GraphData {
@@ -32,8 +24,6 @@ export interface GraphData {
   edges: readonly GraphEdge[];
 }
 
-export interface Exploration extends GraphData {
-  query: string;
+export interface TopicGraph extends GraphData {
   rootNodeId: string;
-  answer: TopicAnswer;
 }

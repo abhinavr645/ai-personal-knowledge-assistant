@@ -1,19 +1,41 @@
-import { Focus, Network, Orbit } from "lucide-react";
+import { Focus, LoaderCircle, Network, Orbit } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { Expansion } from "@/hooks/use-exploration";
+import type { KnowledgeSource } from "@/lib/ai/evidence-schemas";
 import type { GraphNode } from "@/types/exploration";
+import { SourceLinks } from "./answer-panel";
 import { EmptyState } from "./empty-state";
 
 export function SelectedTopicPanel({
   node,
   related,
   onSelect,
-  onExplore,
+  expansion,
+  sources,
+  canExpand,
+  graphFull,
+  onExpand,
 }: {
   node: GraphNode | undefined;
   related: GraphNode[];
   onSelect: (id: string) => void;
-  onExplore: (node: GraphNode) => void;
+  expansion: Expansion | undefined;
+  sources: ReadonlyMap<string, KnowledgeSource>;
+  canExpand: boolean;
+  graphFull: boolean;
+  onExpand: (node: GraphNode) => void;
 }) {
+  const knowledge =
+    expansion && "knowledge" in expansion ? expansion.knowledge : undefined;
+  const references =
+    knowledge?.sources ??
+    [...new Set(node?.sourceIds)].flatMap((id) => {
+      const source = sources.get(id);
+      return source ? [source] : [];
+    });
+  const loading = expansion?.status === "loading";
+  const complete =
+    expansion?.status === "expanded" || expansion?.status === "empty";
   return (
     <section
       aria-labelledby="details-heading"
@@ -42,7 +64,7 @@ export function SelectedTopicPanel({
           />
         </div>
       ) : (
-        <div className="flex flex-1 flex-col px-4 py-5 sm:px-5">
+        <div className="flex flex-1 flex-col px-4 py-5 wrap-anywhere sm:px-5">
           <div>
             <span className="inline-block rounded-md border border-primary/20 bg-primary/9 px-2 py-0.5 text-xs font-medium text-primary">
               {node.category}
@@ -51,37 +73,87 @@ export function SelectedTopicPanel({
               {node.name}
             </h3>
             <p className="mt-2.5 text-base leading-relaxed text-muted-foreground">
-              {node.description}
+              {knowledge?.explanation.summary.text ?? node.description}
             </p>
+            {knowledge && (
+              <>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  {knowledge.explanation.detail.text}
+                </p>
+                {knowledge.evidenceNote && (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {knowledge.evidenceNote}
+                  </p>
+                )}
+              </>
+            )}
+            <SourceLinks sources={references} />
           </div>
-          <div className="mt-5 border-t border-border pt-4">
-            <h4 className="text-sm font-medium">Related concepts</h4>
-            <ul className="mt-2.5 flex flex-wrap gap-2">
-              {related.map((concept) => (
-                <li key={concept.id}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 rounded-lg px-2.5 text-xs whitespace-normal text-muted-foreground"
-                    onClick={() => onSelect(concept.id)}
-                  >
-                    {concept.name}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="mt-auto pt-5">
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-10 w-full gap-2 text-primary hover:text-primary"
-              onClick={() => onExplore(node)}
-            >
-              <Network aria-hidden="true" /> Explore topic
-            </Button>
-          </div>
+          {related.length > 0 && (
+            <div className="mt-5 border-t border-border pt-4">
+              <h4 className="text-sm font-medium">Related concepts</h4>
+              <ul className="mt-2.5 flex flex-wrap gap-2">
+                {related.map((concept) => (
+                  <li key={concept.id}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-auto min-h-8 max-w-full rounded-lg px-2.5 py-1.5 text-xs wrap-anywhere whitespace-normal text-muted-foreground"
+                      onClick={() => onSelect(concept.id)}
+                    >
+                      {concept.name}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {canExpand && (
+            <div className="mt-auto pt-5" aria-busy={loading}>
+              {expansion && "message" in expansion && (
+                <p
+                  role={expansion.status === "failed" ? "alert" : "status"}
+                  className="mb-2 text-sm text-muted-foreground"
+                >
+                  {expansion.message}
+                </p>
+              )}
+              {expansion?.status === "expanded" && (
+                <p role="status" className="mb-2 text-sm text-muted-foreground">
+                  Concept expanded.
+                </p>
+              )}
+              {graphFull && !complete && !loading && (
+                <p role="status" className="mb-2 text-sm text-muted-foreground">
+                  This exploration reached its concept limit.
+                </p>
+              )}
+              {!complete && !graphFull && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-10 w-full gap-2 text-primary hover:text-primary"
+                  disabled={loading}
+                  onClick={() => onExpand(node)}
+                >
+                  {loading ? (
+                    <LoaderCircle
+                      aria-hidden="true"
+                      className="motion-safe:animate-spin"
+                    />
+                  ) : (
+                    <Network aria-hidden="true" />
+                  )}
+                  {loading
+                    ? "Expanding…"
+                    : expansion?.status === "failed"
+                      ? "Retry expansion"
+                      : "Expand concept"}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </section>

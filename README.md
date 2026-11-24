@@ -1,9 +1,8 @@
 # AI Personal Knowledge Assistant
 
-The Dynamic Knowledge Graph Explorer will help users search for a topic, read an
-AI-generated explanation, and explore related concepts in an interactive graph.
-Users will be able to follow labeled relationships, expand concepts recursively,
-and save and restore explorations in their browser.
+Search for a topic, read an AI-generated explanation with source links, and
+follow related concepts in an interactive graph. Expand a concept to add new
+branches to the current workspace.
 
 ## Stack
 
@@ -12,7 +11,6 @@ and save and restore explorations in their browser.
 - Cytoscape.js for rendering the graph, with React state as its source of truth
 - LangGraph.js and LangChain Core for orchestration, the Google Gemini SDK for
   generation, external retrieval providers for sources, and Zod for validation
-- Browser `localStorage` for initial persistence
 - Vitest, jsdom, React Testing Library, jest-dom, MSW, Playwright Test, and
   axe-core for automated checks, plus Playwright MCP for interactive inspection
 - ESLint and Prettier for code quality, Git and GitHub for version control, and
@@ -54,15 +52,15 @@ Playwright MCP provides a separate browser for interactive inspection.
 
 ## Environment variables
 
-Use `.env.example` as the template for a local `.env.local` file. The dashboard
-demo runs without credentials.
+Use `.env.example` as the template for a local `.env.local` file. The labeled
+example graph and mocked tests run without credentials.
 
-| Variable            | Use                                                                   |
-| ------------------- | --------------------------------------------------------------------- |
-| `GEMINI_API_KEY`    | Required on the server for `POST /api/search`.                        |
-| `GEMINI_MODEL`      | Optional Gemini model override. Defaults to `gemini-3.8-flash`.       |
-| `TAVILY_API_KEY`    | Required for Tavily web search and domain-restricted official docs.   |
-| `WIKIPEDIA_CONTACT` | Optional public operator email or project URL sent in the User-Agent. |
+| Variable            | Use                                                                    |
+| ------------------- | ---------------------------------------------------------------------- |
+| `GEMINI_API_KEY`    | Required on the server for `POST /api/search` and `POST /api/related`. |
+| `GEMINI_MODEL`      | Optional Gemini model override. Defaults to `gemini-3.8-flash`.        |
+| `TAVILY_API_KEY`    | Required for Tavily web search and domain-restricted official docs.    |
+| `WIKIPEDIA_CONTACT` | Optional public operator email or project URL sent in the User-Agent.  |
 
 Git ignores `.env.local`. Keep keys in server-side code and omit the
 `NEXT_PUBLIC_` prefix for credentials.
@@ -185,12 +183,72 @@ flowchart TD
   diagnostics can capture query and evidence payloads. Run `pnpm test` for mock-based workflow and API tests and
   `pnpm exec playwright test` for the dashboard and graph regression tests.
 
+## Dashboard exploration
+
+1. Submit a question or choose an example topic. The dashboard sends
+   `{ "query": "JavaScript" }` to `POST /api/search` and validates the response
+   before it renders the explanation, clickable sources, and initial graph.
+   It selects the concept matching the query or answer title, or the first
+   concept when neither matches.
+2. Select a node on the canvas or under **Browse concepts** to read its
+   description, see its source references, and highlight its neighbors.
+3. Choose **Expand concept** to request related concepts. Each node tracks its
+   own request and retry state. Successful expansion adds connected concepts
+   near the selected node, updates its explanation, and keeps earlier nodes,
+   relationships, positions, pan, and zoom. New concepts can be expanded too.
+4. Submit a new search or choose **New exploration** to clear the current
+   exploration and cancel pending requests. The workspace lives in React state
+   for the current session. Cytoscape renders the graph and handles gestures.
+
+### Expansion API
+
+Send `POST /api/related` with `Content-Type: application/json`. The shared Zod
+schemas live in `src/lib/exploration/contracts.ts`. The request is limited to
+16 KiB and accepts these fields.
+
+| Field                | Shape                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `topic`              | Original exploration query, 1–300 characters.                                                                              |
+| `concept`            | Selected concept with the server-issued `id`, its `name` (up to 120 characters), and `description` (up to 400 characters). |
+| `neighbors`          | Up to eight known concepts with their `id` and `name`, including the discovery parent when available.                      |
+| `existingConceptIds` | Up to 100 distinct known concept IDs, including the selected concept and neighbors.                                        |
+
+Expansion builds a focused retrieval query from the selected concept and its
+context, then runs the same LangGraph pipeline, evidence builder, and Gemini
+client as search. The expansion prompt receives the original topic, selected
+concept, and neighbors as structured, untrusted context. It asks for an
+evidence-backed explanation and up to seven additional concepts linked to the
+selected anchor. The backend validates citations, drops duplicate and invalid
+relationships, and returns only new concepts reachable from the anchor.
+Concept IDs come from normalized names and relationship IDs from the type and
+endpoints. The workspace caps the merged graph at 100 concepts.
+
+A successful response uses the search envelope
+`{ status, query, knowledge, generation, evidenceCount, retrieval }` plus
+`conceptId`. Here `query` is the original exploration topic. The `knowledge`
+object contains `evidenceStatus`, `evidenceNote`, `explanation`, `concepts`,
+`relationships`, and `sources`. Relationship endpoints can reference existing
+concepts or concepts in the returned batch. An empty batch has empty concept and
+relationship arrays. Insufficient evidence returns HTTP 200 with
+`status: "insufficient_evidence"`, `knowledge: null`, and a message.
+
+Invalid fields or JSON return 400, oversized bodies return 413, and invalid
+content types return 415. Retrieval and Gemini failures return the same safe
+`{ error: { code, message }, retrieval? }` envelope as search. The browser
+validates both endpoints' responses, times requests out after 32 seconds, and
+offers retry for failed expansions. The retrieval-only API runs independently.
+
+### Exploration tests
+
+Run `pnpm test` for MSW-backed provider and dashboard tests, including expansion
+context, validation, citations, deduplication, retry, and cancellation. Run
+`pnpm exec playwright test` for the mocked JavaScript → React → Hooks journey,
+viewport preservation, mobile overflow, and error recovery in Chromium.
+
 ## Status and planned phases
 
-Phase 6 orchestrates retrieval and Gemini generation with LangGraph. The
-interactive Cytoscape dashboard still uses the local machine learning example.
-Vitest uses mocked provider and Gemini responses, and Chromium tests cover the
-dashboard and graph.
+Phase 7 connects the dashboard to structured search and recursive concept
+expansion. Automated tests mock provider and dashboard API responses.
 
 The proposed ten-phase roadmap is:
 
@@ -200,7 +258,7 @@ The proposed ten-phase roadmap is:
 4. Retrieve, normalize, deduplicate, and rank evidence from multiple sources.
 5. Generate topic explanations and related concepts with Gemini.
 6. Orchestrate server-side search with LangGraph.js.
-7. Connect the dashboard to structured search results and citations.
+7. Connect the dashboard to structured search, citations, and recursive expansion.
 8. Save and restore recent explorations locally.
 9. Improve accessibility, error handling, and feature test coverage.
 10. Verify production readiness and deploy to Vercel.

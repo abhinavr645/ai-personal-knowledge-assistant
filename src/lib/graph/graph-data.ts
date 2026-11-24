@@ -8,13 +8,20 @@ export function mergeGraph(current: GraphData, incoming: GraphData): GraphData {
   }
 
   const edges = new Map<string, GraphEdge>();
+  const relationships = new Set<string>();
   for (const edge of [...current.edges, ...incoming.edges]) {
+    const endpoints = [edge.source, edge.target];
+    if (edge.label === "relates to") endpoints.sort();
+    const key = JSON.stringify([edge.kind, edge.label, ...endpoints]);
     if (
       !edges.has(edge.id) &&
+      !relationships.has(key) &&
+      edge.source !== edge.target &&
       nodes.has(edge.source) &&
       nodes.has(edge.target)
     ) {
       edges.set(edge.id, edge);
+      relationships.add(key);
     }
   }
 

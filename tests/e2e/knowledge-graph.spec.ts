@@ -1,5 +1,11 @@
 import type { Core } from "cytoscape";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import {
+  concept,
+  hooksExpansion,
+  javascript,
+  reactExpansion,
+} from "../fixtures/exploration";
 
 async function graphViewport(page: Page) {
   const graph = page.getByRole("region", { name: "Knowledge graph" });
@@ -45,6 +51,110 @@ async function inspectGraph(viewport: Locator) {
     };
   });
 }
+
+test("expands JavaScript to React to Hooks in the same canvas and preserves earlier graph data and viewport", async ({
+  page,
+}) => {
+  const issues: string[] = [];
+  const expanded: string[] = [];
+  page.on("pageerror", (error) => issues.push(error.message));
+  page.on("console", (message) => {
+    if (["warning", "error"].includes(message.type()))
+      issues.push(message.text());
+  });
+  await page.route("**/api/search", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ query: "JavaScript" });
+    await route.fulfill({ json: javascript });
+  });
+  await page.route("**/api/related", async (route) => {
+    const payload = route.request().postDataJSON();
+    expect(payload.topic).toBe("JavaScript");
+    expanded.push(payload.concept.name);
+    if (payload.concept.name === "Hooks") {
+      expect(payload.existingConceptIds).toContain(concept("React").id);
+      expect(payload.neighbors).toContainEqual({
+        id: concept("Components").id,
+        name: "Components",
+      });
+    }
+    await route.fulfill({
+      json: payload.concept.name === "React" ? reactExpansion : hooksExpansion,
+    });
+  });
+  await page.goto("/");
+  await expect(page.getByText("Example", { exact: true })).toBeVisible();
+  const search = page.getByRole("searchbox");
+  await search.fill("JavaScript");
+  await search.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "JavaScript overview" }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Topic explanation" })
+      .getByRole("link", { name: "Reference documentation" }),
+  ).toBeVisible();
+  const { graph, viewport } = await graphViewport(page);
+  const details = page.getByRole("region", { name: "Concept details" });
+
+  const reactId = `node:${concept("React").id}`;
+  const hooksId = `node:${concept("Hooks").id}`;
+  const initial = await inspectGraph(viewport);
+  expect(Object.keys(initial.nodes)).toHaveLength(2);
+  await viewport.click({ position: initial.nodes[reactId].rendered });
+  await expect(details.getByRole("heading", { name: "React" })).toBeVisible();
+  const { x, y } = initial.bounds;
+  const { x: nodeX, y: nodeY } = initial.nodes[reactId].rendered;
+  await page.mouse.move(x + nodeX, y + nodeY);
+  await page.mouse.down();
+  await page.mouse.move(x + nodeX - 24, y + nodeY + 20, { steps: 6 });
+  await page.mouse.up();
+  await graph.getByRole("button", { name: "Zoom out" }).click();
+  const before = await inspectGraph(viewport);
+  expect(before.nodes[reactId].position).not.toEqual(
+    initial.nodes[reactId].position,
+  );
+
+  await details.getByRole("button", { name: "Expand concept" }).click();
+  await expect(graph.getByText("4 concepts")).toBeVisible();
+  await expect
+    .poll(async () => Object.keys((await inspectGraph(viewport)).nodes).length)
+    .toBe(4);
+  const after = await inspectGraph(viewport);
+  expect(after.pan).toEqual(before.pan);
+  expect(after.zoom).toBe(before.zoom);
+  expect(after.nodes[reactId].position).toEqual(before.nodes[reactId].position);
+  expect(
+    Math.hypot(
+      after.nodes[hooksId].position.x - after.nodes[reactId].position.x,
+      after.nodes[hooksId].position.y - after.nodes[reactId].position.y,
+    ),
+  ).toBeLessThan(240);
+
+  await graph.getByText("Browse concepts").click();
+  await graph.getByRole("button", { name: "Hooks" }).click();
+  await expect(details.getByRole("heading", { name: "Hooks" })).toBeVisible();
+  await details.getByRole("button", { name: "Expand concept" }).click();
+  await expect(graph.getByRole("button", { name: "useState" })).toBeVisible();
+  await expect(graph.getByText("5 concepts")).toBeVisible();
+  await expect(graph.getByText("4 relationships")).toBeVisible();
+  await expect
+    .poll(async () => Object.keys((await inspectGraph(viewport)).nodes).length)
+    .toBe(5);
+  const final = await inspectGraph(viewport);
+  expect(Object.keys(final.nodes)).toEqual(
+    expect.arrayContaining(Object.keys(after.nodes)),
+  );
+  expect(Object.keys(final.edges)).toEqual(
+    expect.arrayContaining(Object.keys(after.edges)),
+  );
+  expect(Object.keys(final.edges)).toEqual(
+    expect.arrayContaining(Object.keys(initial.edges)),
+  );
+  expect(final.nodes[reactId].position).toEqual(before.nodes[reactId].position);
+  expect(expanded).toEqual(["React", "Hooks"]);
+  expect(issues).toEqual([]);
+});
 
 test("selects, drags, pans, zooms, fits and resets the real canvas", async ({
   page,

@@ -1,13 +1,47 @@
 import { BookOpen, Check, FileText, LoaderCircle } from "lucide-react";
-import type { TopicAnswer } from "@/types/exploration";
+import type { KnowledgeSource } from "@/lib/ai/evidence-schemas";
+import type { Knowledge } from "@/lib/exploration/contracts";
+
+export function SourceLinks({
+  sources,
+}: {
+  sources: readonly KnowledgeSource[];
+}) {
+  if (sources.length === 0) return null;
+  return (
+    <ul
+      className="mt-3 flex min-w-0 flex-wrap gap-2"
+      aria-label="Source references"
+    >
+      {sources.map((source) => (
+        <li key={source.id} className="min-w-0 max-w-full">
+          <a
+            href={source.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex max-w-full items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground hover:text-primary"
+          >
+            <FileText size={14} aria-hidden="true" className="shrink-0" />
+            <span className="min-w-0 wrap-anywhere">{source.title}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function AnswerPanel({
-  answer,
+  knowledge,
   searching,
+  message,
+  failed,
 }: {
-  answer: TopicAnswer | undefined;
+  knowledge: Knowledge | undefined;
   searching: boolean;
+  message?: string;
+  failed: boolean;
 }) {
+  const answer = knowledge?.explanation;
   return (
     <section
       aria-labelledby="answer-heading"
@@ -26,14 +60,12 @@ export function AnswerPanel({
             Topic explanation
           </h2>
         </div>
-        {answer && (
-          <span className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground">
-            Sample answer
-          </span>
-        )}
       </div>
       {!answer ? (
-        <p className="flex min-h-19 items-center gap-2 px-4 py-4 text-sm text-muted-foreground sm:px-5">
+        <p
+          role={failed ? "alert" : "status"}
+          className="flex min-h-19 items-center gap-2 px-4 py-4 text-sm text-muted-foreground sm:px-5"
+        >
           {searching && (
             <LoaderCircle
               size={16}
@@ -42,21 +74,29 @@ export function AnswerPanel({
             />
           )}
           {searching
-            ? "Loading the sample explanation…"
-            : "Search for a topic to see an explanation here."}
+            ? "Retrieving sources and generating an explanation…"
+            : (message ?? "Search for a topic to see an explanation here.")}
         </p>
       ) : (
-        <div className="px-4 py-5 sm:px-5">
+        <div className="px-4 py-5 wrap-anywhere sm:px-5">
           <h3 className="text-2xl font-semibold tracking-tight">
             {answer.title}
           </h3>
           <p className="mt-3 max-w-prose text-base leading-relaxed text-muted-foreground">
-            {answer.introduction}
+            {answer.summary.text}
           </p>
+          <p className="mt-3 max-w-prose text-base leading-relaxed text-muted-foreground">
+            {answer.detail.text}
+          </p>
+          {knowledge.evidenceNote && (
+            <p className="mt-3 text-sm text-muted-foreground">
+              {knowledge.evidenceNote}
+            </p>
+          )}
           <div className="mt-6 space-y-5">
-            {answer.sections.map((section) => (
-              <section key={section.title}>
-                <h4 className="text-base font-medium">{section.title}</h4>
+            {answer.sections.map((section, index) => (
+              <section key={index}>
+                <h4 className="text-base font-medium">{section.heading}</h4>
                 <p className="mt-1.5 max-w-prose text-base leading-relaxed text-muted-foreground">
                   {section.text}
                 </p>
@@ -66,9 +106,9 @@ export function AnswerPanel({
           <section className="mt-6 rounded-lg border border-primary/15 bg-primary/5 p-4">
             <h4 className="text-sm font-semibold">Key takeaways</h4>
             <ul className="mt-2 space-y-2">
-              {answer.takeaways.map((takeaway) => (
+              {answer.takeaways.map((takeaway, index) => (
                 <li
-                  key={takeaway}
+                  key={index}
                   className="flex items-start gap-2 text-sm leading-relaxed text-muted-foreground"
                 >
                   <Check
@@ -76,27 +116,14 @@ export function AnswerPanel({
                     aria-hidden="true"
                     className="mt-0.5 shrink-0 text-primary"
                   />
-                  {takeaway}
+                  {takeaway.text}
                 </li>
               ))}
             </ul>
           </section>
           <section className="mt-6 border-t border-border pt-5">
             <h4 className="text-sm font-semibold">Sources</h4>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              References below are placeholders for this example.
-            </p>
-            <ul className="mt-3 flex flex-wrap gap-2">
-              {answer.sources.map((source) => (
-                <li
-                  key={source.id}
-                  className="inline-flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground"
-                >
-                  <FileText size={14} aria-hidden="true" className="shrink-0" />
-                  {source.label}
-                </li>
-              ))}
-            </ul>
+            <SourceLinks sources={knowledge.sources} />
           </section>
         </div>
       )}

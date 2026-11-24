@@ -7,12 +7,12 @@ import { useKnowledgeGraph } from "@/hooks/use-knowledge-graph";
 import type { GraphLayoutPositions } from "@/lib/graph/cytoscape-layout";
 import { categoryColors } from "@/lib/graph/cytoscape-style";
 import { mergeGraph } from "@/lib/graph/graph-data";
-import type { Exploration, GraphData } from "@/types/exploration";
+import type { GraphData, TopicGraph } from "@/types/exploration";
 
 const emptyGraph: GraphData = { nodes: [], edges: [] };
 
 interface KnowledgeGraphProps {
-  graph: Pick<Exploration, "nodes" | "edges" | "rootNodeId">;
+  graph: TopicGraph;
   selectedId: string | null;
   showLabels: boolean;
   isExample: boolean;
@@ -21,6 +21,7 @@ interface KnowledgeGraphProps {
   resetRevision?: number;
   expandedNodeIds?: ReadonlySet<string>;
   loadingNodeIds?: ReadonlySet<string>;
+  emptyMessage?: string;
 }
 
 export function KnowledgeGraph({
@@ -33,6 +34,7 @@ export function KnowledgeGraph({
   resetRevision,
   expandedNodeIds,
   loadingNodeIds,
+  emptyMessage,
 }: KnowledgeGraphProps) {
   const headingId = useId();
   const graph = useMemo(
@@ -77,8 +79,9 @@ export function KnowledgeGraph({
               Knowledge graph
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {graph.nodes.length} concepts <span aria-hidden="true">·</span>{" "}
-              {graph.edges.length} relationships
+              <span>{graph.nodes.length} concepts</span>{" "}
+              <span aria-hidden="true">·</span>{" "}
+              <span>{graph.edges.length} relationships</span>
             </p>
           </div>
         </div>
@@ -96,14 +99,16 @@ export function KnowledgeGraph({
           aria-hidden="true"
           className="h-full w-full cursor-grab touch-none active:cursor-grabbing"
         />
-        {!ready && (
+        {(!ready || graph.nodes.length === 0) && (
           <p
             role="status"
             className="pointer-events-none absolute inset-0 grid place-items-center px-4 text-center text-sm text-muted-foreground"
           >
             {failed
               ? "The graph could not load. Browse concepts below."
-              : "Loading graph…"}
+              : ready
+                ? emptyMessage
+                : "Loading graph…"}
           </p>
         )}
       </div>
@@ -170,18 +175,22 @@ export function KnowledgeGraph({
         </summary>
         <ul aria-label="Graph concepts" className="flex flex-wrap gap-2 py-2">
           {graph.nodes.map((node) => (
-            <li key={node.id}>
+            <li key={node.id} className="min-w-0 max-w-full">
               <Button
                 type="button"
                 variant="outline"
-                className="h-auto min-h-9 max-w-full py-1.5 whitespace-normal aria-pressed:border-primary/50 aria-pressed:text-primary"
+                aria-label={node.name}
+                className="h-auto min-h-9 max-w-full py-1.5 wrap-anywhere whitespace-normal aria-pressed:border-primary/50 aria-pressed:text-primary"
                 aria-pressed={selectedId === node.id}
                 aria-busy={loadingNodeIds?.has(node.id) || undefined}
                 onClick={() => onSelect(node.id)}
               >
                 {node.name}
                 {loadingNodeIds?.has(node.id) && (
-                  <span className="text-xs text-muted-foreground">
+                  <span
+                    aria-hidden="true"
+                    className="text-xs text-muted-foreground"
+                  >
                     Loading…
                   </span>
                 )}

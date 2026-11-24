@@ -11,6 +11,10 @@ import {
   requestKnowledge,
   validateKnowledge,
 } from "@/lib/ai/generation-service";
+import {
+  relatedRequestSchema,
+  type RelatedRequest,
+} from "@/lib/exploration/contracts";
 import { classifyQuery, routeSources } from "@/lib/retrieval/query-analyzer";
 import { retrieveAnalyzed } from "@/lib/retrieval/retrieval-service";
 import type { ProviderId } from "@/lib/retrieval/types";
@@ -23,6 +27,7 @@ import {
 } from "./search-state";
 
 const contextSchema = z.object({
+  expansion: relatedRequestSchema.optional(),
   client: z.custom<GeminiClient>(
     (value) =>
       !!value &&
@@ -226,22 +231,32 @@ export function createSearchWorkflow({
           if (!classification || !evidence || !context)
             return { failure: unexpected };
           return {
-            draft: await request(
-              classification.query,
-              evidence,
-              context.client,
-              signal,
-            ),
+            draft: context.expansion
+              ? await request(
+                  classification.query,
+                  evidence,
+                  context.client,
+                  signal,
+                  context.expansion,
+                )
+              : await request(
+                  classification.query,
+                  evidence,
+                  context.client,
+                  signal,
+                ),
           };
         },
       ),
     )
     .addNode(
       "validateKnowledge",
-      track("validateKnowledge", ({ draft, evidence }) => {
+      track("validateKnowledge", ({ draft, evidence }, { context }) => {
         if (!draft || !evidence) return { failure: unexpected };
         return {
-          validation: validate(draft, evidence),
+          validation: context?.expansion
+            ? validate(draft, evidence, true)
+            : validate(draft, evidence),
           draft: null,
           evidence: null,
         };
@@ -299,6 +314,7 @@ export function createSearchWorkflow({
   return async function runSearch(
     query: string,
     signal?: AbortSignal,
+    expansion?: RelatedRequest,
   ): Promise<SearchResponse> {
     const started = performance.now();
     try {
@@ -316,7 +332,12 @@ export function createSearchWorkflow({
         () =>
           graph.invoke(
             { query },
-            { callbacks: [], context: { client }, signal, recursionLimit: 10 },
+            {
+              callbacks: [],
+              context: { client, expansion },
+              signal,
+              recursionLimit: 10,
+            },
           ),
       );
       return result.response ?? failureResponse(unexpected);

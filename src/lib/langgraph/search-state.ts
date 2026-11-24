@@ -3,8 +3,11 @@ import "server-only";
 import { StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
 import { preparedEvidenceSchema } from "@/lib/ai/evidence-builder";
-import type { GenerationResult } from "@/lib/ai/generation-service";
 import { generationDraftSchema, knowledgeResultSchema } from "@/lib/ai/schemas";
+import {
+  retrievalMetadataSchema,
+  type SearchResult,
+} from "@/lib/exploration/contracts";
 import {
   queryClassificationSchema,
   selectedProvidersSchema,
@@ -12,12 +15,7 @@ import {
 import {
   maxRetrievalResults,
   retrievalRequestSchema,
-  retrievalResponseSchema,
 } from "@/lib/retrieval/schemas";
-
-export const retrievalMetadataSchema = retrievalResponseSchema
-  .pick({ status: true, providers: true, errors: true })
-  .extend({ resultCount: z.number().int().min(0) });
 
 const failureSchema = z.object({
   status: z.number().int().min(400).max(599),
@@ -29,7 +27,7 @@ export type WorkflowFailure = z.infer<typeof failureSchema>;
 type RetrievalMetadata = z.infer<typeof retrievalMetadataSchema>;
 
 type SearchResponseBody =
-  | (GenerationResult & { query: string; retrieval: RetrievalMetadata })
+  | SearchResult
   | {
       error: { code: string; message: string };
       retrieval?: RetrievalMetadata;

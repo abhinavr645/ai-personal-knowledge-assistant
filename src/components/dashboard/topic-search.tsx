@@ -6,21 +6,24 @@ import { cn } from "@/lib/utils";
 
 export function TopicSearch({
   query,
-  searching,
-  invalid,
+  pendingQuery,
+  inputError,
   inputRef,
   onChange,
   onSearch,
 }: {
   query: string;
-  searching: boolean;
-  invalid: boolean;
+  pendingQuery: string | null;
+  inputError: string;
   inputRef: Ref<HTMLInputElement>;
   onChange: (value: string) => void;
   onSearch: (value: string) => void;
 }) {
   const inputId = useId();
   const errorId = useId();
+  const searching = pendingQuery !== null;
+  const sameSearch = pendingQuery === query.trim();
+  const invalid = Boolean(inputError);
 
   return (
     <section
@@ -74,10 +77,10 @@ export function TopicSearch({
           />
           <Button
             type="submit"
-            disabled={searching}
+            disabled={sameSearch}
             className="h-10 w-23 rounded-lg px-2 font-semibold sm:w-28"
           >
-            {searching ? (
+            {sameSearch ? (
               <LoaderCircle
                 aria-hidden="true"
                 className="hidden motion-safe:animate-spin sm:block"
@@ -85,11 +88,13 @@ export function TopicSearch({
             ) : (
               <Search aria-hidden="true" className="hidden sm:block" />
             )}
-            {searching ? "Searching…" : "Search"}
+            {sameSearch ? "Searching…" : "Search"}
           </Button>
         </div>
         <p role="status" className="sr-only">
-          {searching ? "Searching the example workspace." : ""}
+          {searching
+            ? "Searching for evidence and generating an explanation."
+            : ""}
         </p>
         <div
           className="mt-3 flex min-h-7 flex-wrap items-center gap-2"
@@ -97,7 +102,7 @@ export function TopicSearch({
         >
           {invalid ? (
             <p id={errorId} role="alert" className="text-sm text-destructive">
-              Enter a topic or question to search.
+              {inputError}
             </p>
           ) : (
             <>
@@ -108,7 +113,7 @@ export function TopicSearch({
                   type="button"
                   variant="outline"
                   size="xs"
-                  disabled={searching}
+                  disabled={pendingQuery === entry.query}
                   onClick={() => onSearch(entry.query)}
                   className="h-7 rounded-lg px-2.5 text-xs font-normal text-muted-foreground"
                 >

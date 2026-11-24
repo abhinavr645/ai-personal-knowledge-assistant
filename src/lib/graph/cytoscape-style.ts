@@ -4,6 +4,9 @@ export const categoryColors = {
   Field: "#6ae2af",
   Method: "#c4b5fd",
   "Learning approach": "#7dd3fc",
+  Tool: "#fbbf7a",
+  Principle: "#f9a8d4",
+  Other: "#cbd5e1",
 };
 
 export function graphStyle(fontFamily: string): StylesheetJson {

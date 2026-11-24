@@ -1,7 +1,8 @@
-import type { Exploration } from "@/types/exploration";
+import type { TopicGraph } from "@/types/exploration";
 
-export const exampleExploration: Exploration = {
-  query: "How does machine learning work?",
+const exampleQuery = "How does machine learning work?";
+
+export const exampleExploration: TopicGraph = {
   rootNodeId: "machine-learning",
   nodes: [
     {
@@ -98,33 +99,6 @@ export const exampleExploration: Exploration = {
       label: "includes",
     },
   ],
-  answer: {
-    title: "How machine learning works",
-    introduction:
-      "Machine learning uses examples to teach a model how to recognize patterns. After training, the model can apply those patterns to new data, such as classifying an image or estimating a price.",
-    sections: [
-      {
-        title: "From examples to predictions",
-        text: "During training, an algorithm adjusts the model to reduce errors or improve another objective. Evaluation on examples it has not seen helps show whether the model generalizes beyond its training data.",
-      },
-      {
-        title: "Three common ways to learn",
-        text: "Supervised learning uses labeled examples. Unsupervised learning looks for structure in unlabeled data. Reinforcement learning uses feedback from actions to improve future decisions.",
-      },
-    ],
-    takeaways: [
-      "Training finds patterns in examples.",
-      "Evaluation checks how well those patterns transfer to new data.",
-    ],
-    sources: [
-      { id: "overview", label: "Introductory overview", status: "placeholder" },
-      {
-        id: "methods",
-        label: "Learning methods reference",
-        status: "placeholder",
-      },
-    ],
-  },
 };
 
 export const exampleGraphPositions = {
@@ -141,7 +115,7 @@ export const exampleEntries = [
   {
     nodeId: "machine-learning",
     name: "Machine Learning",
-    query: exampleExploration.query,
+    query: exampleQuery,
   },
   {
     nodeId: "neural-networks",
@@ -156,8 +130,3 @@ export const exampleEntries = [
 ];
 
 export type ExampleEntry = (typeof exampleEntries)[number];
-
-export async function searchExample(query: string): Promise<Exploration> {
-  await new Promise<void>((resolve) => setTimeout(resolve, 650));
-  return { ...exampleExploration, query };
-}

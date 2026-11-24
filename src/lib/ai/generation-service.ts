@@ -1,8 +1,9 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import type { RelatedRequest } from "@/lib/exploration/contracts";
 import { retrievalRequestSchema } from "@/lib/retrieval/schemas";
-import type { z } from "zod";
+import { z } from "zod";
 import {
   buildEvidence,
   type KnowledgeSource,
@@ -11,12 +12,13 @@ import {
 import { GenerationFailure } from "./errors";
 import type { GeminiClient } from "./gemini-client";
 import {
+  expansionInstructions,
+  expansionPromptVersion,
   knowledgeInput,
   knowledgeInstructions,
   promptVersion,
 } from "./prompts";
 import {
-  knowledgeJsonSchema,
   modelKnowledgeSchema,
   type generationDraftSchema,
   type knowledgeResultSchema,
@@ -28,33 +30,49 @@ type Explanation = NonNullable<ModelKnowledge["explanation"]>;
 export type GenerationResult = z.infer<typeof knowledgeResultSchema>;
 export type GenerationDraft = z.infer<typeof generationDraftSchema>;
 
+// Send Gemini the supported JSON Schema subset. Zod enforces the local rules.
+const knowledgeJsonSchema = z.toJSONSchema(modelKnowledgeSchema, {
+  override: ({ jsonSchema }) => {
+    delete jsonSchema.minLength;
+    delete jsonSchema.maxLength;
+    delete jsonSchema.pattern;
+  },
+});
+delete knowledgeJsonSchema.$schema;
+
 function stableId(kind: "concept" | "relationship", fields: string[]) {
   return `${kind}-${createHash("sha256").update(JSON.stringify(fields)).digest("hex").slice(0, 24)}`;
+}
+
+export function conceptIdForName(name: string) {
+  return stableId("concept", [
+    name.normalize("NFKC").toLowerCase().trim().replace(/\s+/gu, " "),
+  ]);
 }
 
 function normalizeGraph(
   concepts: ModelKnowledge["concepts"],
   relationships: ModelKnowledge["relationships"],
+  expansion: boolean,
 ) {
   const conceptIds = new Map<string, string>();
   const generatedIds = new Set<string>();
-  const normalizedConcepts = concepts.map((concept) => {
-    const name = concept.name
-      .normalize("NFKC")
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/gu, " ");
-    const id = stableId("concept", [name]);
-    if (conceptIds.has(concept.id) || generatedIds.has(id)) {
+  const normalizedConcepts: ModelKnowledge["concepts"] = [];
+  for (const concept of concepts) {
+    const id = conceptIdForName(concept.name);
+    if (!expansion && (conceptIds.has(concept.id) || generatedIds.has(id))) {
       throw new GenerationFailure("invalid_generated_schema");
     }
+    if (conceptIds.has(concept.id)) continue;
     conceptIds.set(concept.id, id);
+    if (generatedIds.has(id)) continue;
     generatedIds.add(id);
-    return { ...concept, id };
-  });
+    normalizedConcepts.push({ ...concept, id });
+  }
 
   const localRelationshipIds = new Set<string>();
-  const normalizedRelationships = relationships.map((relationship) => {
+  const normalizedRelationships: ModelKnowledge["relationships"] = [];
+  for (const relationship of relationships) {
     const sourceConceptId = conceptIds.get(relationship.sourceConceptId);
     const targetConceptId = conceptIds.get(relationship.targetConceptId);
     if (
@@ -62,18 +80,25 @@ function normalizeGraph(
       !targetConceptId ||
       sourceConceptId === targetConceptId
     ) {
+      if (expansion) continue;
       throw new GenerationFailure("invalid_relationship_endpoints");
     }
     const endpoints = [sourceConceptId, targetConceptId];
     if (relationship.type === "RELATED_TO") endpoints.sort();
     const id = stableId("relationship", [relationship.type, ...endpoints]);
     if (localRelationshipIds.has(relationship.id) || generatedIds.has(id)) {
+      if (expansion) continue;
       throw new GenerationFailure("invalid_generated_schema");
     }
     localRelationshipIds.add(relationship.id);
     generatedIds.add(id);
-    return { ...relationship, id, sourceConceptId, targetConceptId };
-  });
+    normalizedRelationships.push({
+      ...relationship,
+      id,
+      sourceConceptId,
+      targetConceptId,
+    });
+  }
 
   return {
     concepts: normalizedConcepts,
@@ -120,21 +145,31 @@ export async function requestKnowledge(
   evidence: PreparedEvidence,
   client: GeminiClient,
   signal?: AbortSignal,
+  expansion?: RelatedRequest,
 ): Promise<GenerationDraft> {
   const raw = await client.generateJson(
     {
-      systemInstruction: knowledgeInstructions,
-      contents: knowledgeInput(query, evidence.items),
+      systemInstruction: expansion
+        ? knowledgeInstructions + expansionInstructions
+        : knowledgeInstructions,
+      contents: knowledgeInput(query, evidence.items, expansion),
       responseJsonSchema: knowledgeJsonSchema,
     },
     signal,
   );
-  return { raw, generation: { model: client.model, promptVersion } };
+  return {
+    raw,
+    generation: {
+      model: client.model,
+      promptVersion: expansion ? expansionPromptVersion : promptVersion,
+    },
+  };
 }
 
 export function validateKnowledge(
   { raw, generation }: GenerationDraft,
   evidence: PreparedEvidence,
+  expansion = false,
 ): GenerationResult {
   const evidenceCount = evidence.items.length;
   const parsed = modelKnowledgeSchema.safeParse(raw);
@@ -169,7 +204,7 @@ export function validateKnowledge(
     evidenceStatus: model.evidenceStatus,
     evidenceNote: model.evidenceNote,
     explanation: model.explanation,
-    ...normalizeGraph(model.concepts, model.relationships),
+    ...normalizeGraph(model.concepts, model.relationships, expansion),
     sources: citedSources(model.explanation, model, evidence.sources),
   };
   return { status: "ok" as const, knowledge, generation, evidenceCount };

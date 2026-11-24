@@ -12,6 +12,7 @@ export function toCytoscapeNode(node: GraphNode) {
       graphId: node.id,
       label: node.name,
       category: node.category,
+      expandedFrom: node.expandedFrom,
     },
   } satisfies NodeDefinition;
 }
