@@ -47,7 +47,8 @@ export function DashboardShell() {
         setSidebarOpen(false);
         if (result.snapshot) {
           setOpenError(undefined);
-          if (exploration.activeId !== id) exploration.restore(result.snapshot);
+          if (exploration.activeId !== id || history.saveConflict)
+            exploration.restore(result.snapshot);
         } else {
           setOpenError(result.error);
         }
@@ -121,7 +122,7 @@ export function DashboardShell() {
               >
                 {historyNotice}
               </p>
-              {history.saveError && !openError && (
+              {history.saveError && !history.saveConflict && !openError && (
                 <Button
                   type="button"
                   size="sm"

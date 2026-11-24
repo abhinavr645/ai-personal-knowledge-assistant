@@ -20,7 +20,8 @@ export const httpUrlSchema = z
   .trim()
   .max(2_048)
   .refine((value) => {
-    if (!/^https?:\/\//i.test(value) || /[\s\\]/u.test(value)) return false;
+    if (!/^https?:\/\//i.test(value) || /[\p{Cc}\s\\]/u.test(value))
+      return false;
     const url = URL.parse(value);
     return (
       url !== null &&

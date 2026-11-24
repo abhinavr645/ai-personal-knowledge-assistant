@@ -131,6 +131,7 @@ export function useExploration() {
 
   function restore(snapshot: HistorySnapshot) {
     cancelRequests(requests.current);
+    history.rememberRestored(snapshot);
     setQuery(snapshot.content.topic);
     setInputError("");
     const { graph, selectedId, positions } = snapshot.content;
@@ -391,7 +392,9 @@ export function useExploration() {
     node,
     related,
     selectedId,
-    selectNode: setSelectedId,
+    selectNode(id: string) {
+      if (graph.nodes.some((concept) => concept.id === id)) setSelectedId(id);
+    },
     expansion,
     conceptSources,
     graphFull: graph.nodes.length >= maxExplorationNodes,

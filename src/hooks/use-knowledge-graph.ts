@@ -1,4 +1,10 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Core, EventObject } from "cytoscape";
 import {
   presentGraph,
@@ -156,7 +162,7 @@ export function useKnowledgeGraph({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!core) return;
     syncViewport(core, graph, resetRevision);
   }, [core, graph, resetRevision]);

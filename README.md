@@ -31,21 +31,24 @@ pnpm dev
 The dashboard is available at [localhost:3000](http://localhost:3000).
 On Linux CI, use `pnpm exec playwright install --with-deps chromium` when
 Chromium's system dependencies also need to be installed.
+After dependency and browser installation, the build and mocked suites use
+local assets. The pinned Geist package supplies the dashboard fonts.
 
 ## Checks and scripts
 
-| Command             | Purpose                                                        |
-| ------------------- | -------------------------------------------------------------- |
-| `pnpm peers check`  | Check the resolved dependency peer ranges.                     |
-| `pnpm typecheck`    | Generate Next.js route types and run strict TypeScript checks. |
-| `pnpm lint`         | Apply the Next.js ESLint rules.                                |
-| `pnpm format`       | Format supported project files with Prettier.                  |
-| `pnpm format:check` | Check formatting.                                              |
-| `pnpm test`         | Run Vitest unit and component tests once.                      |
-| `pnpm test:watch`   | Watch for changes with Vitest.                                 |
-| `pnpm test:e2e`     | Test the dashboard in Chromium.                                |
-| `pnpm build`        | Create a production build.                                     |
-| `pnpm start`        | Serve the production build on port 3000.                       |
+| Command             | Purpose                                                         |
+| ------------------- | --------------------------------------------------------------- |
+| `pnpm peers check`  | Check the resolved dependency peer ranges.                      |
+| `pnpm audit`        | Check the resolved dependency tree against registry advisories. |
+| `pnpm typecheck`    | Generate Next.js route types and run strict TypeScript checks.  |
+| `pnpm lint`         | Apply the Next.js ESLint rules.                                 |
+| `pnpm format`       | Format supported project files with Prettier.                   |
+| `pnpm format:check` | Check formatting.                                               |
+| `pnpm test`         | Run Vitest unit and component tests once.                       |
+| `pnpm test:watch`   | Watch for changes with Vitest.                                  |
+| `pnpm test:e2e`     | Test the dashboard in Chromium.                                 |
+| `pnpm build`        | Create a production build.                                      |
+| `pnpm start`        | Serve the production build on port 3000.                        |
 
 Playwright Test starts the local development server when needed and retains a
 screenshot and trace on failure. The HTML report is written to `playwright-report/`.
@@ -300,8 +303,11 @@ refreshes and browser restarts while the browser retains site data. Clearing
 site data removes local explorations. The snapshot stores explanations and
 citation metadata. Credentials, provider payloads, pending requests, and
 temporary errors are excluded. Reopen a saved entry manually after a refresh.
-If two tabs edit the same entry, the latest successful workspace save takes
-precedence.
+Before saving, the dashboard compares the stored content with the version
+currently open. If another tab has saved a newer graph, the dashboard preserves
+it and asks the user to reopen that entry. A rename alone can coexist with a
+graph update. Browser storage has no transaction spanning the comparison and
+write, so exactly simultaneous writes can still race.
 
 ### Persistence tests
 
@@ -311,11 +317,60 @@ the Chromium journey from JavaScript through React and Hooks, reopening after
 refresh, expanding another concept, renaming, and deleting. The browser suite
 also exercises the mobile sidebar and recovery after a simulated quota error.
 
+## Security and reliability
+
+- All three POST routes validate JSON before dispatch. Search and retrieval
+  accept up to 4 KiB, and expansion accepts up to 16 KiB. Request body reads
+  time out after six seconds with HTTP 408. The server worker accepts up to
+  eight concurrent validated requests across the routes. Further requests
+  return HTTP 429 with `Retry-After: 2`.
+- Provider fetches use fixed outbound endpoints and disallow HTTP redirects.
+  Official-documentation citations must match an approved HTTPS host and
+  documentation path. Citation URLs are validated metadata. A user's browser
+  may follow redirects when opening a source link.
+- Retrieved evidence and the search topic enter Gemini as data separate from
+  the system instructions. The server checks citation IDs and graph
+  relationships before returning knowledge. Partial retrieval details remain
+  in the API response. These checks establish citation provenance. Factual
+  accuracy and the quality of each explanation still require human review.
+- The app sends a Content Security Policy that blocks framing and plugin
+  objects and limits document base URLs and form submissions. It also sends
+  MIME sniffing protection and a referrer policy. The policy preserves the
+  statically rendered dashboard and does not enforce a script nonce.
+- The `minimatch` override applies only to the `@ts-morph/common` adapter
+  used by the shadcn CLI. Version 11.0.9 resolves the moderate advisory
+  detected for the prior lockfile.
+  [Maintainer advisory](https://github.com/isaacs/minimatch/security/advisories/GHSA-g3hv-75wg-m249)
+
+The admission limit is per worker. It controls simultaneous work and does not
+enforce client quotas across workers or over time. Public deployment still
+requires an upstream abuse limit or access controls, provider quota checks,
+and live verification of a general query, a technical query, and an expansion.
+Phase 9 used mocked provider responses. Live verification remains pending
+because local Gemini credentials were unavailable and live calls were not
+authorized.
+
+### Phase 9 graph benchmark
+
+Five Chromium runs against each production build expanded a synthetic graph
+from 93 to 100 concepts, starting with 362 relationships. Graph updates now
+skip unchanged Cytoscape data and capture new node positions before autosave.
+
+| Measurement                                       | Before      | After     |
+| ------------------------------------------------- | ----------- | --------- |
+| Data events on existing elements                  | 455 per run | 0 per run |
+| Full layout runs during expansion                 | 0 per run   | 0 per run |
+| Observed storage writes during expansion          | 1–2 per run | 1 per run |
+| Median first node addition to last position event | 1.6 ms      | 0.8 ms    |
+
+The benchmark measures local graph updates with mocked API responses.
+
 ## Status and planned phases
 
-Phase 8 adds browser-local exploration history to structured search and
-recursive concept expansion. Automated tests mock provider and dashboard API
-responses.
+Phase 9 hardens the existing search, recursive expansion, and local history
+flows. Vitest covers request bounds, provider behavior, concurrent expansions,
+and storage recovery. Playwright runs axe and checks layout at 320, 375, 768,
+1024, and 1440 pixels.
 
 The proposed ten-phase roadmap is:
 

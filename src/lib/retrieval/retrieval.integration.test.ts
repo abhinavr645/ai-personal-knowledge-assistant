@@ -88,6 +88,24 @@ function post(query: string) {
 }
 
 describe("provider adapters", () => {
+  test("does not follow HTTP redirects from either fixed Wikipedia or GitHub origin", async () => {
+    const unexpected = vi.fn(() => HttpResponse.json({}));
+    const alternate = "https://example.test/redirected-evidence";
+    server.use(
+      http.get(wikipedia, () => HttpResponse.redirect(alternate)),
+      http.get(githubRepository, () => HttpResponse.redirect(alternate)),
+      http.get(alternate, unexpected),
+    );
+    for (const [provider, query] of [
+      [providers.wikipedia, "Machine learning"],
+      [providers.github, "vercel/next.js"],
+    ] as const) {
+      await expect(provider.retrieve(context(query))).rejects.toMatchObject({
+        code: "network",
+      });
+    }
+    expect(unexpected).not.toHaveBeenCalled();
+  });
   test("Wikipedia selects plain-text introductions and skips missing and disambiguation pages", async () => {
     vi.stubEnv("WIKIPEDIA_CONTACT", "operator@example.test");
     server.use(
@@ -290,6 +308,10 @@ describe("provider adapters", () => {
               url: "https://react.dev.example.test/reference/react/useState",
             },
             { ...reactDoc, url: "https://react.dev/blog" },
+            {
+              ...reactDoc,
+              url: "https://react.dev/reference/react/example%2Fdetails",
+            },
           ],
         });
       }),

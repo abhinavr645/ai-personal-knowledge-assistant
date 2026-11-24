@@ -19,6 +19,34 @@ import {
 
 beforeEach(() => window.localStorage.clear());
 
+test("blocks a stale update while preserving another tab's graph and a separately edited title", () => {
+  const store = createExplorationStorage();
+  const other = createExplorationStorage();
+  const id = crypto.randomUUID();
+  const topic = javascript.query;
+  const createdAt = new Date().toISOString();
+  const baseline = store.create(id, topic, createdAt, originalContent());
+  const stale = { ...originalContent(), selectedId: concept("React").id };
+  const expanded = other.update(id, expandedContent(), baseline);
+  other.rename(id, "Renamed in another tab");
+  expect(() => store.update(id, stale, baseline)).toThrow(
+    expect.objectContaining({ code: "conflict" }),
+  );
+  expect(store.load(id)).toMatchObject({
+    title: "Renamed in another tab",
+    content: expanded.content,
+  });
+  const reopened = store.load(id);
+  other.rename(id, "Another title");
+  const selectedId = concept("JavaScript").id;
+  expect(
+    store.update(id, { ...reopened.content, selectedId }, reopened),
+  ).toMatchObject({
+    title: "Another title",
+    content: { selectedId, graph: expanded.content.graph },
+  });
+});
+
 const store = createExplorationStorage();
 const createdAt = "2026-11-25T00:00:00.000Z";
 const topic = javascript.query;

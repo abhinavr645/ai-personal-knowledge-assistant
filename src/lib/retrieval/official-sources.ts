@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { httpUrlSchema } from "./schemas";
+
 const documentationSources = [
   {
     name: "React documentation",
@@ -64,7 +67,10 @@ export function documentationForUrl(
   value: string,
   sources: readonly DocumentationSource[],
 ) {
-  const url = new URL(value);
+  const parsed = httpUrlSchema.safeParse(value);
+  if (!parsed.success) return;
+  const url = new URL(parsed.data);
+  if (/%(?:00|25|2f|5c)/i.test(url.pathname)) return;
   return documentationSources.find(
     (source) =>
       url.protocol === "https:" &&
@@ -73,4 +79,3 @@ export function documentationForUrl(
       source.paths.test(url.pathname),
   );
 }
-import { z } from "zod";

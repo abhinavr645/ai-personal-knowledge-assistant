@@ -181,6 +181,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@ts-morph/common@0.27.0>minimatch': 11.0.9
+
 importers:
 
   .:
@@ -206,6 +209,9 @@ importers:
       cytoscape:
         specifier: ^3.35.0
         version: 3.35.0
+      geist:
+        specifier: 1.9.2
+        version: 1.9.2(next@16.4.6(@babel/core@7.29.13(supports-color@7.2.0))(@playwright/test@1.65.1)(@types/node@26.6.6)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))
       lucide-react:
         specifier: ^1.78.0
         version: 1.78.0(@types/react@19.3.0)(react@19.3.0)
@@ -2217,6 +2223,11 @@ packages:
     resolution: {integrity: sha512-zV/5HKTfCeKWnxG0Dmrw51hEWFGfcF2xiXqcA3+J90WDuP0SvoiSO5ORvcBsifmx/FoIjgQN3oNOGaQ5PhLFkg==}
     engines: {node: '>=18'}
 
+  geist@1.9.2:
+    resolution: {integrity: sha512-UU1x2q5Khob0+i4csFvXk1Ki4DePdu7xISuXyEcj1tzQMg64oN7Kbuy4e5z5QhcUWbbvOMJNs3ZxYQqpsEMV3w==}
+    peerDependencies:
+      next: '>=13.2.0'
+
   generator-function@2.0.1:
     resolution: {integrity: sha512-SFdFmIJi+ybC0vjlHN0ZGVGHc3lgE0DxPAT0djjVg+kjOnSqclqmj0KQ7ykTOLP6YxoqOvuAODGdcHJn+43q3g==}
     engines: {node: '>= 0.4'}
@@ -2914,10 +2925,6 @@ packages:
   min-indent@1.0.1:
     resolution: {integrity: sha512-I9jwMn07Sy/IwOj3zVkVik2JTvgpaykDZEigL6Rx6N9LbMywwUSMtxET+7lVoDLLd3O3IXwJwvuuns8UB/HeAg==}
     engines: {node: '>=4'}
-
-  minimatch@10.2.6:
-    resolution: {integrity: sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==}
-    engines: {node: 18 || 20 || >=22}
 
   minimatch@11.0.9:
     resolution: {integrity: sha512-KCFkfyjqerNlSstjlhIGNXIKZGA/6O4V4RlhZ+Dsr621SPPw0mzlypE9D9ZOoPiVefHID+j7/XuMMlqfD/F60Q==}
@@ -4771,7 +4778,7 @@ snapshots:
   '@ts-morph/common@0.27.0':
     dependencies:
       fast-glob: 3.3.3
-      minimatch: 10.2.6
+      minimatch: 11.0.9
       path-browserify: 1.0.1
 
   '@tybys/wasm-util@0.10.5':
@@ -5896,6 +5903,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  geist@1.9.2(next@16.4.6(@babel/core@7.29.13(supports-color@7.2.0))(@playwright/test@1.65.1)(@types/node@26.6.6)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)):
+    dependencies:
+      next: 16.4.6(@babel/core@7.29.13(supports-color@7.2.0))(@playwright/test@1.65.1)(@types/node@26.6.6)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+
   generator-function@2.0.1: {}
 
   gensync@1.0.0-beta.2: {}
@@ -6494,10 +6505,6 @@ snapshots:
   mimic-function@5.0.1: {}
 
   min-indent@1.0.1: {}
-
-  minimatch@10.2.6:
-    dependencies:
-      brace-expansion: 5.0.13
 
   minimatch@11.0.9:
     dependencies:

@@ -8,11 +8,16 @@ import {
 import { BodyTooLargeError, readBoundedJson } from "@/lib/bounded-json";
 
 const maxBodyBytes = 4_096;
+export const bodyReadTimeoutMs = 6_000;
 
-export function queryJson(body: unknown, status: number) {
+export function queryJson(
+  body: unknown,
+  status: number,
+  headers?: Record<string, string>,
+) {
   return Response.json(body, {
     status,
-    headers: { "Cache-Control": "no-store" },
+    headers: { ...headers, "Cache-Control": "no-store" },
   });
 }
 
@@ -40,9 +45,17 @@ export async function parseJsonRequest<T>(
   }
 
   let body: unknown;
+  const deadline = AbortSignal.timeout(bodyReadTimeoutMs);
+  const signal = AbortSignal.any([request.signal, deadline]);
   try {
-    body = await readBoundedJson(request, limit);
+    body = await readBoundedJson(request, limit, signal);
   } catch (error) {
+    if (signal.aborted)
+      return errorResponse(
+        "request_timeout",
+        "The request body could not be read in time.",
+        408,
+      );
     if (error instanceof BodyTooLargeError) {
       return errorResponse(
         "body_too_large",

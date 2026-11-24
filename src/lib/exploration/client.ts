@@ -12,6 +12,7 @@ export async function postExploration<T>(
   signal: AbortSignal,
 ): Promise<T> {
   const deadline = AbortSignal.timeout(timeoutMs);
+  const requestSignal = AbortSignal.any([signal, deadline]);
   const operation = path === "/api/search" ? "Search" : "Expansion";
   const timeoutMessage = `${operation} timed out. Please try again.`;
   let response: Response;
@@ -20,7 +21,7 @@ export async function postExploration<T>(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.any([signal, deadline]),
+      signal: requestSignal,
     });
   } catch {
     throw new Error(
@@ -32,7 +33,7 @@ export async function postExploration<T>(
 
   let data: unknown;
   try {
-    data = await readBoundedJson(response, maxResponseBytes);
+    data = await readBoundedJson(response, maxResponseBytes, requestSignal);
   } catch {
     if (deadline.aborted || response.status === 504)
       throw new Error(timeoutMessage);
@@ -46,6 +47,13 @@ export async function postExploration<T>(
     if (response.status === 504) throw new Error(timeoutMessage);
     const parsed = apiErrorSchema.safeParse(data);
     const code = parsed.success ? parsed.data.error.code : "";
+    if (response.status === 429) {
+      throw new Error(
+        code === "service_busy"
+          ? "The service is busy. Please try again shortly."
+          : "AI generation is temporarily rate limited. Please try again later.",
+      );
+    }
     if (code === "retrieval_failed")
       throw new Error("Could not retrieve evidence. Please try again.");
     if (code === "gemini_missing_credentials")

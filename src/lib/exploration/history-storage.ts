@@ -19,6 +19,8 @@ const errors = {
   invalid:
     "This exploration could not be saved or opened because its data is invalid or its version is unsupported.",
   missing: "This saved exploration is no longer available.",
+  conflict:
+    "This exploration changed in another tab. Reopen the saved version from history before continuing.",
   duplicate: "An exploration with this ID is already saved.",
   count: `History holds up to ${maxSavedExplorations} explorations. Delete a saved exploration to make room.`,
   size: "This exploration is too large to save. The last saved version is still in history if one exists.",
@@ -162,14 +164,18 @@ export function createExplorationStorage(getStorage = browserStorage) {
       });
     },
 
-    update(id: string, content: unknown) {
+    update(id: string, content: unknown, baseline?: HistorySnapshot) {
       return withStorage(getStorage, (storage) => {
         const previous = getRecord(storage, id);
         const snapshot = validate({ ...previous, content });
+        const savedContent = JSON.stringify(previous.content);
+        if (JSON.stringify(snapshot.content) === savedContent) return previous;
         if (
-          JSON.stringify(snapshot.content) === JSON.stringify(previous.content)
+          baseline &&
+          (baseline.id !== id ||
+            JSON.stringify(baseline.content) !== savedContent)
         )
-          return previous;
+          throw new HistoryStorageError("conflict");
         snapshot.updatedAt = timestamp(previous.updatedAt);
         writeRecord(storage, snapshot);
         return snapshot;

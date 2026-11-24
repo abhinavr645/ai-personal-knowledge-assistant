@@ -155,6 +155,15 @@ test.each([
   ["network failure", () => HttpResponse.error(), "Could not connect"],
   ["timeout", () => HttpResponse.json({}, { status: 504 }), "Search timed out"],
   [
+    "service capacity",
+    () =>
+      HttpResponse.json(
+        { error: { code: "service_busy", message: "private" } },
+        { status: 429 },
+      ),
+    "The service is busy",
+  ],
+  [
     "invalid response",
     () => HttpResponse.json({ ...javascript, knowledge: null }),
     "Search returned an invalid response",
@@ -179,6 +188,67 @@ test.each([
     expect(screen.queryByText("private")).not.toBeInTheDocument();
   },
 );
+
+test("merges out-of-order expansions for different concepts and keeps focus through each request", async () => {
+  mockJavaScript();
+  const react = Promise.withResolvers<void>();
+  const root = Promise.withResolvers<void>();
+  const received = vi.fn();
+  const rootExpansion = {
+    ...success(
+      "JavaScript",
+      "JavaScript details",
+      ["Promises"],
+      [["JavaScript", "Promises"]],
+    ),
+    conceptId: concept("JavaScript").id,
+  };
+  server.use(
+    http.post("/api/related", async ({ request }) => {
+      const {
+        concept: { name },
+      } = (await request.json()) as { concept: { name: string } };
+      received(name);
+      await (name === "React" ? react.promise : root.promise);
+      return HttpResponse.json(
+        name === "React" ? reactExpansion : rootExpansion,
+      );
+    }),
+  );
+  const { user, graph, details, answer, submit, choose } = setup();
+  await submit("JavaScript");
+  await answer.findByRole("heading", { name: "JavaScript overview" });
+  await user.click(graph.getByText("Browse concepts"));
+  await choose("React");
+  await user.click(details.getByRole("button", { name: "Expand concept" }));
+  expect(details.getByRole("button", { name: "Expanding…" })).toHaveFocus();
+  await choose("JavaScript");
+  await user.click(details.getByRole("button", { name: "Expand concept" }));
+  await waitFor(() =>
+    expect(received.mock.calls).toEqual([["React"], ["JavaScript"]]),
+  );
+  root.resolve();
+  await graph.findByRole("button", { name: "Promises" });
+  expect(
+    details.getByRole("button", { name: "Concept expanded." }),
+  ).toHaveFocus();
+  expect(graph.getByRole("button", { name: "React" })).toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  react.resolve();
+  await graph.findByRole("button", { name: "Hooks" });
+  expect(graph.getByText("5 concepts")).toBeVisible();
+  expect(graph.getByText("4 relationships")).toBeVisible();
+  await waitFor(() => {
+    const [entry] = storage.list().entries;
+    const content = storage.load(entry.id).content;
+    expect(content.expansions.map(({ nodeId }) => nodeId)).toEqual([
+      concept("JavaScript").id,
+      concept("React").id,
+    ]);
+  });
+});
 
 test("tracks only the requested node, deduplicates requests and merges stable additions without losing existing graph data", async () => {
   mockJavaScript();
@@ -219,7 +289,10 @@ test("tracks only the requested node, deduplicates requests and merges stable ad
   await user.click(graph.getByText("Browse concepts"));
   await choose("React");
   await user.dblClick(details.getByRole("button", { name: "Expand concept" }));
-  expect(details.getByRole("button", { name: "Expanding…" })).toBeDisabled();
+  expect(details.getByRole("button", { name: "Expanding…" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   expect(graph.getByRole("button", { name: "React" })).toHaveAttribute(
     "aria-busy",
     "true",

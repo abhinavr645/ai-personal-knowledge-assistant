@@ -36,6 +36,14 @@ export function SelectedTopicPanel({
   const loading = expansion?.status === "loading";
   const complete =
     expansion?.status === "expanded" || expansion?.status === "empty";
+  const outcome =
+    expansion?.status === "expanded"
+      ? "Concept expanded."
+      : expansion?.status === "empty"
+        ? knowledge
+          ? "No additional concepts found."
+          : "The retrieved evidence was insufficient to expand this concept."
+        : undefined;
   return (
     <section
       aria-labelledby="details-heading"
@@ -110,22 +118,17 @@ export function SelectedTopicPanel({
             </div>
           )}
           {canExpand && (
-            <div className="mt-auto pt-5" aria-busy={loading}>
+            <div className="mt-auto pt-5">
+              <p role="status" className="sr-only">
+                {loading
+                  ? `Expanding ${node.name}.`
+                  : outcome
+                    ? `${node.name} expansion finished.`
+                    : ""}
+              </p>
               {expansion?.status === "failed" && (
                 <p role="alert" className="mb-2 text-sm text-muted-foreground">
                   {expansion.message}
-                </p>
-              )}
-              {expansion?.status === "empty" && (
-                <p role="status" className="mb-2 text-sm text-muted-foreground">
-                  {knowledge
-                    ? "No additional concepts found."
-                    : "The retrieved evidence was insufficient to expand this concept."}
-                </p>
-              )}
-              {expansion?.status === "expanded" && (
-                <p role="status" className="mb-2 text-sm text-muted-foreground">
-                  Concept expanded.
                 </p>
               )}
               {graphFull && !complete && !loading && (
@@ -133,12 +136,13 @@ export function SelectedTopicPanel({
                   This exploration reached its concept limit.
                 </p>
               )}
-              {!complete && !graphFull && (
+              {(!graphFull || loading || complete) && (
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-10 w-full gap-2 text-primary hover:text-primary"
-                  disabled={loading}
+                  className="h-auto min-h-10 w-full gap-2 py-2 whitespace-normal text-primary aria-disabled:cursor-default aria-disabled:text-muted-foreground"
+                  disabled={loading || complete}
+                  focusableWhenDisabled
                   onClick={() => onExpand(node)}
                 >
                   {loading ? (
@@ -149,11 +153,12 @@ export function SelectedTopicPanel({
                   ) : (
                     <Network aria-hidden="true" />
                   )}
-                  {loading
-                    ? "Expanding…"
-                    : expansion?.status === "failed"
-                      ? "Retry expansion"
-                      : "Expand concept"}
+                  {outcome ??
+                    (loading
+                      ? "Expanding…"
+                      : expansion?.status === "failed"
+                        ? "Retry expansion"
+                        : "Expand concept")}
                 </Button>
               )}
             </div>

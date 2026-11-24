@@ -49,6 +49,8 @@ test("keeps one Cytoscape instance, synchronizes updates, and destroys it on unm
   });
   expect(select).toHaveBeenCalledExactlyOnceWith("neural-networks");
 
+  const rewritten = vi.fn();
+  core.on("data", rewritten);
   const updates = mergeGraph(exampleExploration, {
     nodes: [
       {
@@ -86,6 +88,7 @@ test("keeps one Cytoscape instance, synchronizes updates, and destroys it on unm
   expect(core.nodes().length).toBe(8);
   expect(core.edges().length).toBe(7);
   expect(core.$id("edge:ml-model").data("target")).toBe("node:model");
+  expect(rewritten).not.toHaveBeenCalled();
   expect(learning.position()).toEqual(draggedPosition);
   expect(learning.hasClass("is-selected")).toBe(false);
   expect(learning.hasClass("is-expanded")).toBe(true);

@@ -43,8 +43,9 @@ export function useExplorationHistory(draft: HistoryDraft | undefined) {
   const [saveFailure, setSaveFailure] = useState<{
     id: string;
     message: string;
+    conflict: boolean;
   }>();
-  const savedId = useRef<string | null>(null);
+  const saved = useRef<HistorySnapshot | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -99,20 +100,27 @@ export function useExplorationHistory(draft: HistoryDraft | undefined) {
 
   function save(candidate: HistoryDraft) {
     try {
-      const snapshot =
-        candidate.restored || savedId.current === candidate.id
-          ? historyStorage.update(candidate.id, candidate.content)
-          : historyStorage.create(
-              candidate.id,
-              candidate.topic,
-              candidate.createdAt,
-              candidate.content,
-            );
-      savedId.current = candidate.id;
+      const baseline =
+        saved.current?.id === candidate.id ? saved.current : undefined;
+      if (candidate.restored && !baseline) return;
+      const snapshot = baseline
+        ? historyStorage.update(candidate.id, candidate.content, baseline)
+        : historyStorage.create(
+            candidate.id,
+            candidate.topic,
+            candidate.createdAt,
+            candidate.content,
+          );
+      saved.current = snapshot;
       addOrRefresh(snapshot);
       setSaveFailure(undefined);
     } catch (error) {
-      setSaveFailure({ id: candidate.id, message: errorMessage(error) });
+      setSaveFailure({
+        id: candidate.id,
+        message: errorMessage(error),
+        conflict:
+          error instanceof HistoryStorageError && error.code === "conflict",
+      });
     }
   }
 
@@ -128,11 +136,12 @@ export function useExplorationHistory(draft: HistoryDraft | undefined) {
     };
   }, [draft]);
 
-  const saveError =
-    draft && saveFailure?.id === draft.id ? saveFailure.message : undefined;
+  const failure =
+    draft && saveFailure?.id === draft.id ? saveFailure : undefined;
   return {
     ...history,
-    saveError,
+    saveError: failure?.message,
+    saveConflict: failure?.conflict ?? false,
     retrySave() {
       if (draft) save(draft);
     },
@@ -142,6 +151,10 @@ export function useExplorationHistory(draft: HistoryDraft | undefined) {
       } catch (error) {
         return { error: errorMessage(error) };
       }
+    },
+    rememberRestored(snapshot: HistorySnapshot) {
+      saved.current = snapshot;
+      setSaveFailure(undefined);
     },
     rename(id: string, title: string) {
       try {

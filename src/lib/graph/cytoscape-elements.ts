@@ -47,7 +47,11 @@ export function syncGraphElements(core: Core, graph: GraphData) {
       if (current.empty()) {
         core.add(node);
         addedNodeIds.add(node.data.id);
-      } else {
+      } else if (
+        current.data("label") !== node.data.label ||
+        current.data("category") !== node.data.category ||
+        current.data("expandedFrom") !== node.data.expandedFrom
+      ) {
         current.data(node.data);
       }
     }
@@ -66,7 +70,12 @@ export function syncGraphElements(core: Core, graph: GraphData) {
           .edges()
           .move({ source: edge.data.source, target: edge.data.target });
       }
-      current.data(edge.data);
+      if (
+        current.data("relationship") !== edge.data.relationship ||
+        current.data("kind") !== edge.data.kind
+      ) {
+        current.data(edge.data);
+      }
     }
   });
 

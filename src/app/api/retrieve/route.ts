@@ -1,12 +1,17 @@
 import { retrieve } from "@/lib/retrieval/retrieval-service";
+import { withApiCapacity } from "@/lib/server/api-capacity";
 import { parseQueryRequest, queryJson } from "@/lib/server/query-request";
 
 export async function POST(request: Request) {
   const parsed = await parseQueryRequest(request);
   if ("response" in parsed) return parsed.response;
 
+  return withApiCapacity(() => retrieveResponse(parsed.query, request.signal));
+}
+
+async function retrieveResponse(query: string, signal: AbortSignal) {
   try {
-    const result = await retrieve(parsed.query, request.signal);
+    const result = await retrieve(query, signal);
     if (result.status !== "failed") return queryJson(result, 200);
     if (result.errors.every(({ code }) => code === "timeout"))
       return queryJson(result, 504);
