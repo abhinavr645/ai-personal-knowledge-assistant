@@ -58,3 +58,7 @@ export type RelatedRequest = z.infer<typeof relatedRequestSchema>;
 export type SearchResult = z.infer<typeof searchResponseSchema>;
 export type RelatedResult = z.infer<typeof relatedResponseSchema>;
 export type Knowledge = Extract<SearchResult, { status: "ok" }>["knowledge"];
+export type DisplayKnowledge = Pick<
+  Knowledge,
+  "explanation" | "evidenceNote" | "sources"
+>;

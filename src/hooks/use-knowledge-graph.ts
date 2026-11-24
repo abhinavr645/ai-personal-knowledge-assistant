@@ -16,8 +16,13 @@ import type { GraphData } from "@/types/exploration";
 interface KnowledgeGraphOptions extends GraphPresentation {
   graph: GraphData;
   layoutHints?: GraphLayoutPositions;
+  restoredPositions?: GraphLayoutPositions;
   resetRevision?: number;
   onSelect: (id: string) => void;
+  onPositionsChange?: (
+    revision: number,
+    positions: GraphLayoutPositions,
+  ) => void;
 }
 
 function compactColumns(width: number) {
@@ -29,8 +34,10 @@ function compactColumns(width: number) {
 export function useKnowledgeGraph({
   graph,
   layoutHints,
+  restoredPositions,
   resetRevision = 0,
   onSelect,
+  onPositionsChange,
   ...presentation
 }: KnowledgeGraphOptions) {
   const host = useRef<HTMLDivElement>(null);
@@ -53,10 +60,26 @@ export function useKnowledgeGraph({
     if (instance.nodes().nonempty()) instance.fit(instance.elements(), 16);
   }
 
-  function reset(instance: Core) {
-    view.current.dragged = false;
-    if (instance.nodes().nonempty())
+  function reportPositions(instance: Core) {
+    if (!onPositionsChange || instance.nodes().empty()) return;
+    const positions: Record<string, { x: number; y: number }> = {};
+    instance.nodes().forEach((node) => {
+      positions[node.data("graphId")] = { ...node.position() };
+    });
+    onPositionsChange(resetRevision, positions);
+  }
+
+  function reset(instance: Core, saved?: GraphLayoutPositions) {
+    view.current.dragged = Boolean(saved);
+    if (instance.nodes().nonempty()) {
       layoutGraph(instance, view.current.columns, layoutHints);
+      if (saved) {
+        instance
+          .nodes()
+          .positions((node) => saved[node.data("graphId")] ?? node.position());
+      }
+      reportPositions(instance);
+    }
     fit(instance);
   }
 
@@ -82,16 +105,21 @@ export function useKnowledgeGraph({
       view.current.resetRevision = revision;
       if (instance.nodes().empty()) return;
       if (resetRequested || instance.nodes().length === added.length) {
-        reset(instance);
+        reset(instance, restoredPositions);
       } else if (added.nonempty()) {
         view.current.fitted = false;
         placeAddedNodes(instance, added);
+        reportPositions(instance);
       }
     },
   );
 
   const syncPresentation = useEffectEvent((instance: Core) => {
     presentGraph(instance, presentation, view.current.columns !== undefined);
+  });
+  const finishDrag = useEffectEvent((instance: Core) => {
+    view.current.dragged = true;
+    reportPositions(instance);
   });
 
   useEffect(() => {
@@ -160,9 +188,7 @@ export function useKnowledgeGraph({
     const onViewportGesture = () => {
       view.current.fitted = false;
     };
-    const onDrag = () => {
-      view.current.dragged = true;
-    };
+    const onDrag = () => finishDrag(core);
     core.on("tap", "node", onTap);
     core.on("dragpan scrollzoom pinchzoom", onViewportGesture);
     core.on("dragfree", "node", onDrag);

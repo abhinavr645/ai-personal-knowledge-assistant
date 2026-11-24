@@ -2,13 +2,14 @@
 
 Search for a topic, read an AI-generated explanation with source links, and
 follow related concepts in an interactive graph. Expand a concept to add new
-branches to the current workspace.
+branches to the current workspace, then reopen saved work from your browser.
 
 ## Stack
 
 - Next.js 16 App Router, React 19, strict TypeScript, and Tailwind CSS 4
 - shadcn/ui with Base UI and the Nova preset, plus Lucide React icons
 - Cytoscape.js for rendering the graph, with React state as its source of truth
+- Browser `localStorage` for exploration history
 - LangGraph.js and LangChain Core for orchestration, the Google Gemini SDK for
   generation, external retrieval providers for sources, and Zod for validation
 - Vitest, jsdom, React Testing Library, jest-dom, MSW, Playwright Test, and
@@ -197,8 +198,9 @@ flowchart TD
    near the selected node, updates its explanation, and keeps earlier nodes,
    relationships, positions, pan, and zoom. New concepts can be expanded too.
 4. Submit a new search or choose **New exploration** to clear the current
-   exploration and cancel pending requests. The workspace lives in React state
-   for the current session. Cytoscape renders the graph and handles gestures.
+   workspace and cancel pending requests. Open a saved exploration from
+   **Exploration history** to continue it. React owns the active workspace.
+   Cytoscape renders the graph and handles gestures.
 
 ### Expansion API
 
@@ -245,10 +247,75 @@ context, validation, citations, deduplication, retry, and cancellation. Run
 `pnpm exec playwright test` for the mocked JavaScript → React → Hooks journey,
 viewport preservation, mobile overflow, and error recovery in Chromium.
 
+## Exploration history
+
+The dashboard sets aside a new exploration ID when a valid search starts.
+It saves the first snapshot after the search returns a validated explanation.
+Completed expansions, selection changes, final node positions after a drag, and
+layout resets update the snapshot. Pan, zoom, animation, and in-flight requests
+do not trigger saves. An identical snapshot skips the write. Failed searches
+and searches that return insufficient evidence leave history as it was.
+
+Open **Exploration history** in the sidebar or mobile workspace menu to see
+saved titles, concept counts, and last updated times. Click a title to reopen
+the graph, explanations, citations, completed expansions, selection, and saved
+node positions. Opening an entry makes no retrieval or Gemini requests.
+The entry's actions menu offers **Rename** and **Delete**. Deletion requires
+confirmation. **New exploration** clears the active workspace and keeps saved
+entries.
+
+### Snapshot format and limits
+
+The browser stores one JSON record per exploration under
+`knowledge-assistant:exploration:<uuid>`. Storage access begins after hydration.
+The Zod schema in `src/lib/exploration/history-snapshot.ts` checks every save
+and restore.
+
+| Snapshot field                            | Content                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------ |
+| `version`                                 | Schema version. The initial version is `1`.                              |
+| `id`, `title`                             | Exploration UUID and display title of up to 120 characters.              |
+| `createdAt`, `updatedAt`                  | UTC timestamps for creation and the last saved change.                   |
+| `content.topic`                           | Original search query, independent of the display title.                 |
+| `content.graph`                           | Root ID, concept nodes, and relationships with stable IDs.               |
+| `content.selectedId`, `content.positions` | Selected concept and saved model-space coordinates, when available.      |
+| `content.overview`, `content.expansions`  | Explanation and citation IDs for the topic and each completed expansion. |
+| `content.sources`                         | One metadata record per cited source ID, with its validated URL.         |
+
+Version dispatch lives in the snapshot decoder. Future migrations can decode
+an older supported version there and validate the migrated record against the
+current schema. An unreadable record or unknown version stays untouched and
+is skipped in the list. Other entries remain usable.
+
+History can hold 20 records, including unreadable records, and each graph
+retains the 100-concept limit. Each serialized record has a budget of 256,000
+UTF-16 code units. The combined key and record budget is 2,000,000 units.
+The browser's own quota may be lower. When storage is blocked or full,
+the current workspace remains usable and the last successful snapshot remains
+in history. **Retry save** lets the user try again after freeing space. History
+never evicts an entry to make room.
+
+Saved data belongs to the current browser profile and site origin. It survives
+refreshes and browser restarts while the browser retains site data. Clearing
+site data removes local explorations. The snapshot stores explanations and
+citation metadata. Credentials, provider payloads, pending requests, and
+temporary errors are excluded. Reopen a saved entry manually after a refresh.
+If two tabs edit the same entry, the latest successful workspace save takes
+precedence.
+
+### Persistence tests
+
+Run `pnpm test` for snapshot validation, CRUD, corrupt records, storage limits,
+and mocked dashboard save and restore tests. Run `pnpm exec playwright test` for
+the Chromium journey from JavaScript through React and Hooks, reopening after
+refresh, expanding another concept, renaming, and deleting. The browser suite
+also exercises the mobile sidebar and recovery after a simulated quota error.
+
 ## Status and planned phases
 
-Phase 7 connects the dashboard to structured search and recursive concept
-expansion. Automated tests mock provider and dashboard API responses.
+Phase 8 adds browser-local exploration history to structured search and
+recursive concept expansion. Automated tests mock provider and dashboard API
+responses.
 
 The proposed ten-phase roadmap is:
 

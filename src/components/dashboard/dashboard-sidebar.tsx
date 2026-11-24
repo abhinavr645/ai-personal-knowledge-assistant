@@ -6,9 +6,11 @@ import {
   type ExampleEntry,
 } from "@/lib/mock-data/example-exploration";
 import { cn } from "@/lib/utils";
+import { ExplorationHistory, type SidebarHistory } from "./exploration-history";
 
 export interface SidebarActions {
   activeQuery: string | null;
+  history: SidebarHistory;
   onNew: () => void;
   onNavigate: () => void;
   onExample: (entry: ExampleEntry) => void;
@@ -17,15 +19,20 @@ export interface SidebarActions {
 
 export function DashboardSidebar({
   activeQuery,
+  history,
   onNew,
   onNavigate,
   onExample,
   onSettings,
   drawer = false,
 }: SidebarActions & { drawer?: boolean }) {
-  const hasActiveExample = exampleEntries.some(
-    ({ query }) => query === activeQuery,
+  const hasActiveHistory = history.entries.some(
+    ({ id }) => id === history.activeId,
   );
+  const hasActiveExample =
+    !hasActiveHistory &&
+    exampleEntries.some(({ query }) => query === activeQuery);
+  const explorerActive = !hasActiveHistory && !hasActiveExample;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-sidebar px-4 pt-5 pb-4">
@@ -67,22 +74,23 @@ export function DashboardSidebar({
         <Button
           variant="ghost"
           type="button"
-          aria-current={hasActiveExample ? undefined : "page"}
+          aria-current={explorerActive ? "page" : undefined}
           onClick={onNavigate}
           className={cn(
             "h-10 w-full justify-start gap-2.5 px-3",
-            !hasActiveExample && "bg-sidebar-accent text-foreground",
+            explorerActive && "bg-sidebar-accent text-foreground",
           )}
         >
           <Compass
             aria-hidden="true"
             className={
-              hasActiveExample ? "text-muted-foreground" : "text-primary"
+              explorerActive ? "text-primary" : "text-muted-foreground"
             }
           />{" "}
           Explorer
         </Button>
-        <div className="mt-9 flex items-center gap-2 px-3 text-xs font-medium text-muted-foreground">
+        <ExplorationHistory {...history} />
+        <div className="mt-6 flex items-center gap-2 px-3 text-xs font-medium text-muted-foreground">
           <Lightbulb size={14} aria-hidden="true" />
           <h2>Example topics</h2>
         </div>
@@ -94,17 +102,24 @@ export function DashboardSidebar({
                 type="button"
                 className={cn(
                   "h-9 w-full justify-start gap-2.5 px-3 text-muted-foreground",
-                  activeQuery === entry.query &&
+                  hasActiveExample &&
+                    activeQuery === entry.query &&
                     "bg-sidebar-accent text-foreground",
                 )}
-                aria-current={activeQuery === entry.query ? "true" : undefined}
+                aria-current={
+                  hasActiveExample && activeQuery === entry.query
+                    ? "true"
+                    : undefined
+                }
                 onClick={() => onExample(entry)}
               >
                 <span
                   aria-hidden="true"
                   className={cn(
                     "size-1.5 rounded-full bg-muted-foreground/55",
-                    activeQuery === entry.query && "bg-primary",
+                    hasActiveExample &&
+                      activeQuery === entry.query &&
+                      "bg-primary",
                   )}
                 />
                 {entry.name}

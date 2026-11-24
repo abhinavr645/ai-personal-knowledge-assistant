@@ -6,7 +6,6 @@ import {
   relatedRequestSchema,
   relatedResponseSchema,
   searchResponseSchema,
-  type Knowledge,
 } from "@/lib/exploration/contracts";
 import {
   createTopicGraph,
@@ -14,29 +13,46 @@ import {
   graphNeighbors,
   mergeKnowledge,
 } from "@/lib/exploration/graph";
+import {
+  restoreExploration,
+  snapshotContent,
+  type CompletedExpansion,
+  type ExplorationContent,
+  type HistorySnapshot,
+} from "@/lib/exploration/history-snapshot";
+import type { GraphLayoutPositions } from "@/lib/graph/cytoscape-layout";
 import { exampleExploration } from "@/lib/mock-data/example-exploration";
 import {
   maxQueryLength,
   retrievalRequestSchema,
 } from "@/lib/retrieval/schemas";
 import type { GraphNode, TopicGraph } from "@/types/exploration";
+import { useExplorationHistory } from "./use-exploration-history";
 
-export type Expansion =
-  | { status: "loading" }
-  | { status: "expanded"; knowledge: Knowledge }
-  | { status: "empty" | "failed"; message: string; knowledge?: Knowledge };
+type PendingExpansion =
+  { status: "loading" } | { status: "failed"; message: string };
+export type Expansion = CompletedExpansion | PendingExpansion;
 
-interface Exploration {
-  topic: string;
-  graph: TopicGraph;
-  knowledge: Knowledge;
-  expansions: Partial<Record<string, Expansion>>;
+interface Exploration extends ExplorationContent {
+  id: string;
+  createdAt: string;
+  restored: boolean;
+}
+
+interface GraphLayout {
+  revision: number;
+  restored?: GraphLayoutPositions;
+  positions?: GraphLayoutPositions;
 }
 
 type SearchState =
   | { status: "idle" }
   | { status: "loading"; query: string }
-  | { status: "ready"; exploration: Exploration }
+  | {
+      status: "ready";
+      exploration: Exploration;
+      pending: Partial<Record<string, PendingExpansion>>;
+    }
   | { status: "insufficient" | "failed"; message: string };
 
 function cancelRequests(requests: {
@@ -54,7 +70,7 @@ export function useExploration() {
   const [inputError, setInputError] = useState("");
   const [state, setState] = useState<SearchState>({ status: "idle" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [resetRevision, setResetRevision] = useState(0);
+  const [layout, setLayout] = useState<GraphLayout>({ revision: 0 });
   const requests = useRef({
     search: null as { query: string; controller: AbortController } | null,
     expansions: new Map<string, AbortController>(),
@@ -65,6 +81,19 @@ export function useExploration() {
   }, []);
 
   const exploration = state.status === "ready" ? state.exploration : undefined;
+  const pending = state.status === "ready" ? state.pending : undefined;
+  const historyDraft = useMemo(
+    () =>
+      exploration && {
+        id: exploration.id,
+        topic: exploration.topic,
+        createdAt: exploration.createdAt,
+        restored: exploration.restored,
+        content: snapshotContent(exploration, selectedId, layout.positions),
+      },
+    [exploration, selectedId, layout.positions],
+  );
+  const history = useExplorationHistory(historyDraft);
   const graph =
     exploration?.graph ??
     (state.status === "idle" ? exampleExploration : emptyTopicGraph);
@@ -77,12 +106,68 @@ export function useExploration() {
   const { loadingNodeIds, expandedNodeIds } = useMemo(() => {
     const loadingNodeIds = new Set<string>();
     const expandedNodeIds = new Set<string>();
-    for (const [id, expansion] of Object.entries(expansions ?? {})) {
+    for (const [id, expansion] of Object.entries(pending ?? {})) {
       if (expansion?.status === "loading") loadingNodeIds.add(id);
+    }
+    for (const [id, expansion] of Object.entries(expansions ?? {})) {
       if (expansion?.status === "expanded") expandedNodeIds.add(id);
     }
     return { loadingNodeIds, expandedNodeIds };
-  }, [expansions]);
+  }, [expansions, pending]);
+
+  function activate(
+    ready: Exploration,
+    selected: string | null,
+    positions?: GraphLayoutPositions,
+  ) {
+    setState({ status: "ready", exploration: ready, pending: {} });
+    setSelectedId(selected);
+    setLayout(({ revision }) => ({
+      revision: revision + 1,
+      restored: positions,
+      positions,
+    }));
+  }
+
+  function restore(snapshot: HistorySnapshot) {
+    cancelRequests(requests.current);
+    setQuery(snapshot.content.topic);
+    setInputError("");
+    const { graph, selectedId, positions } = snapshot.content;
+    const selected = graph.nodes.some(({ id }) => id === selectedId)
+      ? selectedId
+      : graph.rootNodeId || null;
+    activate(
+      {
+        ...restoreExploration(snapshot.content),
+        id: snapshot.id,
+        createdAt: snapshot.createdAt,
+        restored: true,
+      },
+      selected,
+      positions,
+    );
+  }
+
+  function recordPositions(revision: number, positions: GraphLayoutPositions) {
+    if (!exploration) return;
+    setLayout((current) => {
+      if (revision !== current.revision) return current;
+      const previous = current.positions;
+      const ids = Object.keys(positions);
+      if (
+        previous &&
+        Object.keys(previous).length === ids.length &&
+        ids.every(
+          (id) =>
+            previous[id]?.x === positions[id]?.x &&
+            previous[id]?.y === positions[id]?.y,
+        )
+      )
+        return current;
+      return { ...current, positions };
+    });
+  }
 
   function reset() {
     cancelRequests(requests.current);
@@ -90,7 +175,7 @@ export function useExploration() {
     setQuery("");
     setInputError("");
     setSelectedId(null);
-    setResetRevision((revision) => revision + 1);
+    setLayout(({ revision }) => ({ revision: revision + 1 }));
   }
 
   async function search(value: string) {
@@ -108,6 +193,8 @@ export function useExploration() {
     if (active.search?.query === topic) return;
     cancelRequests(active);
     const controller = new AbortController();
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
     active.search = { query: topic, controller };
     setQuery(topic);
     setInputError("");
@@ -130,17 +217,18 @@ export function useExploration() {
         return;
       }
       const graph = createTopicGraph(topic, result.knowledge);
-      setState({
-        status: "ready",
-        exploration: {
+      activate(
+        {
+          id,
+          createdAt,
+          restored: false,
           topic,
           graph,
           knowledge: result.knowledge,
           expansions: {},
         },
-      });
-      setSelectedId(graph.rootNodeId || null);
-      setResetRevision((revision) => revision + 1);
+        graph.rootNodeId || null,
+      );
     } catch (error) {
       if (active.search?.controller !== controller) return;
       setState({ status: "failed", message: (error as Error).message });
@@ -168,17 +256,32 @@ export function useExploration() {
       },
     ) => {
       setState((current) => {
-        if (controller.signal.aborted || current.status !== "ready")
+        if (
+          controller.signal.aborted ||
+          current.status !== "ready" ||
+          current.exploration.id !== exploration.id
+        )
           return current;
-        const exploration = current.exploration;
-        const next = resolve(exploration);
+        const next = resolve(current.exploration);
+        if (
+          next.expansion.status === "failed" ||
+          next.expansion.status === "loading"
+        ) {
+          return {
+            ...current,
+            pending: { ...current.pending, [concept.id]: next.expansion },
+          };
+        }
+        const pending = { ...current.pending };
+        delete pending[concept.id];
         return {
           status: "ready",
+          pending,
           exploration: {
-            ...exploration,
-            graph: next.graph ?? exploration.graph,
+            ...current.exploration,
+            graph: next.graph ?? current.exploration.graph,
             expansions: {
-              ...exploration.expansions,
+              ...current.exploration.expansions,
               [concept.id]: next.expansion,
             },
           },
@@ -224,7 +327,7 @@ export function useExploration() {
         );
       if (result.status === "insufficient_evidence") {
         update(() => ({
-          expansion: { status: "empty", message: result.message },
+          expansion: { status: "empty" },
         }));
         return;
       }
@@ -242,7 +345,6 @@ export function useExploration() {
             : {
                 status: "empty",
                 knowledge,
-                message: "No additional concepts found.",
               },
         };
       });
@@ -257,7 +359,7 @@ export function useExploration() {
     }
   }
 
-  const expansion = node && expansions?.[node.id];
+  const expansion = node && (expansions?.[node.id] ?? pending?.[node.id]);
   // Keep source records available for concept descriptions from every batch.
   const conceptSources = useMemo(() => {
     const sources = new Map(
@@ -280,8 +382,12 @@ export function useExploration() {
     },
     inputError,
     state,
+    history,
+    activeId: exploration?.id,
     graph,
-    resetRevision,
+    resetRevision: layout.revision,
+    restoredPositions: layout.restored,
+    recordPositions,
     node,
     related,
     selectedId,
@@ -292,6 +398,7 @@ export function useExploration() {
     expandedNodeIds,
     loadingNodeIds,
     reset,
+    restore,
     search,
     expand,
   };

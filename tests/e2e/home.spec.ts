@@ -128,4 +128,77 @@ test("supports mobile search, expansion, navigation, and reset without page over
   await expect(details.getByText("Select a concept")).toBeVisible();
   await expect(page.getByRole("searchbox")).toHaveValue("");
   await expect(page.getByRole("searchbox")).toBeFocused();
+  await openNavigation.click();
+  await menu
+    .getByRole("list", { name: "Saved explorations" })
+    .getByRole("button", { name: "How does deep learning work?", exact: true })
+    .click();
+  await expect(menu).toBeHidden();
+  await expect(
+    details.getByRole("heading", { name: "Deep Learning" }),
+  ).toBeVisible();
+  await expect(graph.getByText("2 concepts")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    320,
+  );
+  await openNavigation.click();
+  await menu
+    .getByRole("button", { name: "Actions for How does deep learning work?" })
+    .click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  const rename = page.getByRole("dialog", { name: "Rename exploration" });
+  await rename
+    .getByRole("textbox", { name: "Exploration title" })
+    .fill("Deep Learning notes");
+  await rename.getByRole("button", { name: "Save title" }).click();
+  await openNavigation.click();
+  await expect(
+    menu.getByRole("button", { name: "Deep Learning notes", exact: true }),
+  ).toBeVisible();
+});
+
+test("shows a storage quota failure and saves the active graph when retried", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const store = Storage.prototype.setItem;
+    let fail = true;
+    window.addEventListener("allow-history-storage-for-test", () => {
+      fail = false;
+    });
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (fail && key.startsWith("knowledge-assistant:exploration:"))
+        throw new DOMException(
+          "Private browser quota details",
+          "QuotaExceededError",
+        );
+      return store.call(this, key, value);
+    };
+  });
+  let searches = 0;
+  await page.route("**/api/search", (route) => {
+    searches += 1;
+    return route.fulfill({ json: javascript });
+  });
+  await page.goto("/");
+  await expect(page.getByText("No saved explorations yet.")).toBeVisible();
+  const input = page.getByRole("searchbox");
+  await input.fill("JavaScript");
+  await input.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "JavaScript overview" }),
+  ).toBeVisible();
+  await expect(page.getByText(/Browser storage is full/)).toBeVisible();
+  await expect(page.getByText("No saved explorations yet.")).toBeVisible();
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event("allow-history-storage-for-test")),
+  );
+  await page.getByRole("button", { name: "Retry save" }).click();
+  await expect(
+    page
+      .getByRole("list", { name: "Saved explorations" })
+      .getByRole("button", { name: "JavaScript", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(/Browser storage is full/)).toHaveCount(0);
+  expect(searches).toBe(1);
 });

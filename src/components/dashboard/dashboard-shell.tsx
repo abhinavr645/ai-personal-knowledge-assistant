@@ -1,11 +1,16 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { useExploration } from "@/hooks/use-exploration";
 import { exampleGraphPositions } from "@/lib/mock-data/example-exploration";
 import { AnswerPanel } from "./answer-panel";
 import { DashboardHeader } from "./dashboard-header";
 import { DashboardSidebar, type SidebarActions } from "./dashboard-sidebar";
+import {
+  ExplorationHistoryDialog,
+  type HistoryAction,
+} from "./exploration-history";
 import { KnowledgeGraph } from "./knowledge-graph";
 import { SelectedTopicPanel } from "./selected-topic-panel";
 import { TopicSearch } from "./topic-search";
@@ -16,9 +21,12 @@ export function DashboardShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
+  const [historyAction, setHistoryAction] = useState<HistoryAction>();
+  const [openError, setOpenError] = useState<string>();
   const searchInput = useRef<HTMLInputElement>(null);
   const returnToSearch = useRef(false);
-  const { state } = exploration;
+  const { state, history } = exploration;
+  const historyNotice = openError ?? history.saveError ?? history.error;
 
   function focusSearch() {
     if (sidebarOpen) {
@@ -31,12 +39,32 @@ export function DashboardShell() {
 
   const sidebar: SidebarActions = {
     activeQuery: state.status === "ready" ? state.exploration.topic : null,
+    history: {
+      ...history,
+      activeId: exploration.activeId,
+      onOpen(id) {
+        const result = history.load(id);
+        setSidebarOpen(false);
+        if (result.snapshot) {
+          setOpenError(undefined);
+          if (exploration.activeId !== id) exploration.restore(result.snapshot);
+        } else {
+          setOpenError(result.error);
+        }
+      },
+      onAction(action) {
+        setSidebarOpen(false);
+        setHistoryAction(action);
+      },
+    },
     onNew: () => {
+      setOpenError(undefined);
       exploration.reset();
       focusSearch();
     },
     onNavigate: focusSearch,
     onExample: (entry) => {
+      setOpenError(undefined);
       void exploration.search(entry.query);
       setSidebarOpen(false);
     },
@@ -80,10 +108,31 @@ export function DashboardShell() {
             inputRef={searchInput}
             onChange={exploration.changeQuery}
             onSearch={(value) => {
+              setOpenError(undefined);
               void exploration.search(value);
               if (!value.trim()) searchInput.current?.focus();
             }}
           />
+          {historyNotice && (
+            <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-4 py-3">
+              <p
+                role="status"
+                className="min-w-0 text-sm wrap-anywhere text-muted-foreground"
+              >
+                {historyNotice}
+              </p>
+              {history.saveError && !openError && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={history.retrySave}
+                >
+                  Retry save
+                </Button>
+              )}
+            </div>
+          )}
           <div className="grid min-w-0 gap-4 sm:gap-5 min-[1120px]:grid-cols-[minmax(0,1fr)_18rem] min-[1450px]:grid-cols-[minmax(0,1fr)_20rem]">
             <KnowledgeGraph
               graph={exploration.graph}
@@ -91,6 +140,8 @@ export function DashboardShell() {
                 state.status === "idle" ? exampleGraphPositions : undefined
               }
               resetRevision={exploration.resetRevision}
+              restoredPositions={exploration.restoredPositions}
+              onPositionsChange={exploration.recordPositions}
               selectedId={exploration.selectedId}
               showLabels={showLabels}
               isExample={state.status === "idle"}
@@ -136,6 +187,21 @@ export function DashboardShell() {
         showLabels={showLabels}
         onLabelsChange={setShowLabels}
       />
+      {historyAction && (
+        <ExplorationHistoryDialog
+          action={historyAction}
+          finalFocus={searchInput}
+          onClose={() => setHistoryAction(undefined)}
+          onConfirm={(title) => {
+            const id = historyAction.entry.id;
+            if (historyAction.kind === "rename")
+              return history.rename(id, title);
+            const failure = history.remove(id);
+            if (!failure && id === exploration.activeId) exploration.reset();
+            return failure;
+          }}
+        />
+      )}
     </div>
   );
 }

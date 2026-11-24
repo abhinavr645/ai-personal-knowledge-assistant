@@ -1,6 +1,6 @@
 import { BookOpen, Check, FileText, LoaderCircle } from "lucide-react";
 import type { KnowledgeSource } from "@/lib/ai/evidence-schemas";
-import type { Knowledge } from "@/lib/exploration/contracts";
+import type { DisplayKnowledge } from "@/lib/exploration/contracts";
 
 export function SourceLinks({
   sources,
@@ -36,7 +36,7 @@ export function AnswerPanel({
   message,
   failed,
 }: {
-  knowledge: Knowledge | undefined;
+  knowledge: DisplayKnowledge | undefined;
   searching: boolean;
   message?: string;
   failed: boolean;

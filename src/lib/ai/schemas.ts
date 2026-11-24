@@ -17,14 +17,17 @@ const itemId = z
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   .max(70);
 export const conceptIdSchema = z.string().regex(/^concept-[a-f0-9]{24}$/);
-const relationshipIdSchema = z.string().regex(/^relationship-[a-f0-9]{24}$/);
+export const relationshipIdSchema = z
+  .string()
+  .regex(/^relationship-[a-f0-9]{24}$/);
+export const maxGeneratedRelationships = 16;
 const claim = (max: number) => ({
   text: plainText(max),
   kind: z.enum(["evidence", "synthesis"]),
   sourceIds: z.array(evidenceId).min(1).max(4),
 });
 
-const explanation = z.strictObject({
+export const knowledgeExplanationSchema = z.strictObject({
   title: plainText(180),
   summary: z.strictObject(claim(500)),
   detail: z.strictObject(claim(3_000)),
@@ -72,9 +75,9 @@ const relationship = z.strictObject({
 export const modelKnowledgeSchema = z.strictObject({
   evidenceStatus: z.enum(["sufficient", "limited", "insufficient"]),
   evidenceNote: plainText(360, 0),
-  explanation: explanation.nullable(),
+  explanation: knowledgeExplanationSchema.nullable(),
   concepts: z.array(concept).max(8),
-  relationships: z.array(relationship).max(16),
+  relationships: z.array(relationship).max(maxGeneratedRelationships),
 });
 
 export type ModelKnowledge = z.infer<typeof modelKnowledgeSchema>;
@@ -91,7 +94,7 @@ export const generationDraftSchema = z.object({
 const publicKnowledgeSchema = modelKnowledgeSchema
   .extend({
     evidenceStatus: z.enum(["sufficient", "limited"]),
-    explanation,
+    explanation: knowledgeExplanationSchema,
     concepts: z.array(concept.extend({ id: conceptIdSchema })).max(8),
     relationships: z
       .array(
@@ -101,7 +104,7 @@ const publicKnowledgeSchema = modelKnowledgeSchema
           targetConceptId: conceptIdSchema,
         }),
       )
-      .max(16),
+      .max(maxGeneratedRelationships),
     sources: z.array(knowledgeSourceSchema).max(maxEvidenceItems),
   })
   .refine(({ explanation, concepts, relationships, sources }) => {

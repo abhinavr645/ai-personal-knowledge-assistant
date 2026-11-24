@@ -5,6 +5,7 @@ import {
   hooksExpansion,
   javascript,
   reactExpansion,
+  success,
 } from "../fixtures/exploration";
 
 async function graphViewport(page: Page) {
@@ -52,17 +53,33 @@ async function inspectGraph(viewport: Locator) {
   });
 }
 
-test("expands JavaScript to React to Hooks in the same canvas and preserves earlier graph data and viewport", async ({
+test("preserves recursive graph expansion through refresh and supports reopening, expanding, renaming, and deleting", async ({
   page,
 }) => {
   const issues: string[] = [];
   const expanded: string[] = [];
+  let searches = 0;
+  const useStateExpansion = {
+    ...success(
+      "JavaScript",
+      "useState details",
+      ["Functional updates"],
+      [["useState", "Functional updates"]],
+    ),
+    conceptId: concept("useState").id,
+  };
   page.on("pageerror", (error) => issues.push(error.message));
   page.on("console", (message) => {
-    if (["warning", "error"].includes(message.type()))
+    if (
+      ["warning", "error"].includes(message.type()) &&
+      !message
+        .text()
+        .includes("https://nextjs.org/docs/messages/cache-bypass-in-dev")
+    )
       issues.push(message.text());
   });
   await page.route("**/api/search", async (route) => {
+    searches += 1;
     expect(route.request().postDataJSON()).toEqual({ query: "JavaScript" });
     await route.fulfill({ json: javascript });
   });
@@ -77,8 +94,20 @@ test("expands JavaScript to React to Hooks in the same canvas and preserves earl
         name: "Components",
       });
     }
+    if (payload.concept.name === "useState") {
+      expect(payload.existingConceptIds).toContain(concept("React").id);
+      expect(payload.neighbors).toContainEqual({
+        id: concept("Hooks").id,
+        name: "Hooks",
+      });
+    }
+    const replies = {
+      React: reactExpansion,
+      Hooks: hooksExpansion,
+      useState: useStateExpansion,
+    };
     await route.fulfill({
-      json: payload.concept.name === "React" ? reactExpansion : hooksExpansion,
+      json: replies[payload.concept.name as keyof typeof replies],
     });
   });
   await page.goto("/");
@@ -153,6 +182,79 @@ test("expands JavaScript to React to Hooks in the same canvas and preserves earl
   );
   expect(final.nodes[reactId].position).toEqual(before.nodes[reactId].position);
   expect(expanded).toEqual(["React", "Hooks"]);
+
+  const history = page.getByRole("list", { name: "Saved explorations" });
+  const saved = history.getByRole("button", {
+    name: "JavaScript",
+    exact: true,
+  });
+  await expect(saved).toHaveAttribute("aria-current", "true");
+  await expect(saved).toHaveAccessibleDescription(/5 concepts/);
+  await page.reload();
+  await expect(saved).toBeVisible();
+  await expect(saved).not.toHaveAttribute("aria-current", "true");
+  await saved.click();
+  const answer = page.getByRole("region", { name: "Topic explanation" });
+  await expect(
+    answer.getByRole("heading", { name: "JavaScript overview" }),
+  ).toBeVisible();
+  await expect(
+    answer.getByRole("link", { name: "Reference documentation" }),
+  ).toHaveAttribute("href", javascript.knowledge.sources[0].url);
+  await expect(details.getByRole("heading", { name: "Hooks" })).toBeVisible();
+  await expect(details.getByText("Details about Hooks details.")).toBeVisible();
+  await expect(details.getByText("Concept expanded.")).toBeVisible();
+  await expect(
+    details.getByRole("link", { name: "Reference documentation" }),
+  ).toBeVisible();
+  await expect(graph.getByText("5 concepts")).toBeVisible();
+  await expect(graph.getByText("4 relationships")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const restored = await inspectGraph(viewport);
+      return restored.nodes[reactId]?.position;
+    })
+    .toEqual(before.nodes[reactId].position);
+  await expect
+    .poll(async () => Object.keys((await inspectGraph(viewport)).edges))
+    .toEqual(Object.keys(final.edges));
+  expect(searches).toBe(1);
+  expect(expanded).toEqual(["React", "Hooks"]);
+
+  await graph.getByText("Browse concepts").click();
+  await graph.getByRole("button", { name: "useState" }).click();
+  await details.getByRole("button", { name: "Expand concept" }).click();
+  await expect(
+    graph.getByRole("button", { name: "Functional updates" }),
+  ).toBeVisible();
+  await expect(saved).toHaveAccessibleDescription(/6 concepts/);
+  await history.getByRole("button", { name: "Actions for JavaScript" }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  const rename = page.getByRole("dialog", { name: "Rename exploration" });
+  await rename
+    .getByRole("textbox", { name: "Exploration title" })
+    .fill("JavaScript study guide");
+  await rename.getByRole("button", { name: "Save title" }).click();
+  const renamed = history.getByRole("button", {
+    name: "JavaScript study guide",
+    exact: true,
+  });
+  await expect(renamed).toBeVisible();
+  await page.reload();
+  await expect(renamed).toBeVisible();
+  await expect(renamed).toHaveAccessibleDescription(/6 concepts/);
+  await history
+    .getByRole("button", { name: "Actions for JavaScript study guide" })
+    .click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+  const deletion = page.getByRole("dialog", { name: "Delete exploration?" });
+  await expect(deletion).toContainText("JavaScript study guide");
+  await deletion.getByRole("button", { name: "Delete exploration" }).click();
+  await expect(page.getByText("No saved explorations yet.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("No saved explorations yet.")).toBeVisible();
+  expect(expanded).toEqual(["React", "Hooks", "useState"]);
+  expect(searches).toBe(1);
   expect(issues).toEqual([]);
 });
 

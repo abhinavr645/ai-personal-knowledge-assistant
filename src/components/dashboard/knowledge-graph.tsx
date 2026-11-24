@@ -18,6 +18,11 @@ interface KnowledgeGraphProps {
   isExample: boolean;
   onSelect: (id: string) => void;
   layoutHints?: GraphLayoutPositions;
+  restoredPositions?: GraphLayoutPositions;
+  onPositionsChange?: (
+    revision: number,
+    positions: GraphLayoutPositions,
+  ) => void;
   resetRevision?: number;
   expandedNodeIds?: ReadonlySet<string>;
   loadingNodeIds?: ReadonlySet<string>;
@@ -31,6 +36,8 @@ export function KnowledgeGraph({
   isExample,
   onSelect,
   layoutHints,
+  restoredPositions,
+  onPositionsChange,
   resetRevision,
   expandedNodeIds,
   loadingNodeIds,
@@ -49,6 +56,8 @@ export function KnowledgeGraph({
       showLabels,
       onSelect,
       layoutHints,
+      restoredPositions,
+      onPositionsChange,
       resetRevision,
       expandedNodeIds,
       loadingNodeIds,

@@ -111,12 +111,16 @@ export function SelectedTopicPanel({
           )}
           {canExpand && (
             <div className="mt-auto pt-5" aria-busy={loading}>
-              {expansion && "message" in expansion && (
-                <p
-                  role={expansion.status === "failed" ? "alert" : "status"}
-                  className="mb-2 text-sm text-muted-foreground"
-                >
+              {expansion?.status === "failed" && (
+                <p role="alert" className="mb-2 text-sm text-muted-foreground">
                   {expansion.message}
+                </p>
+              )}
+              {expansion?.status === "empty" && (
+                <p role="status" className="mb-2 text-sm text-muted-foreground">
+                  {knowledge
+                    ? "No additional concepts found."
+                    : "The retrieved evidence was insufficient to expand this concept."}
                 </p>
               )}
               {expansion?.status === "expanded" && (
