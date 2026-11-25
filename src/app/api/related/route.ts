@@ -4,8 +4,10 @@ import {
   relatedRequestSchema,
 } from "@/lib/exploration/contracts";
 import { runRelated } from "@/lib/exploration/related-service";
-import { withApiCapacity } from "@/lib/server/api-capacity";
+import { withApiAdmission } from "@/lib/server/api-capacity";
 import { parseJsonRequest, queryJson } from "@/lib/server/query-request";
+
+export const maxDuration = 40;
 
 export async function POST(request: Request) {
   const invalid = {
@@ -27,7 +29,7 @@ export async function POST(request: Request) {
   ) {
     return queryJson({ error: invalid }, 400);
   }
-  return withApiCapacity(async () => {
+  return withApiAdmission(request, async () => {
     const { body, status } = await runRelated(parsed.data, request.signal);
     return queryJson(body, status);
   });

@@ -163,9 +163,19 @@ test("shows a storage quota failure and saves the active graph when retried", as
   await page.addInitScript(() => {
     const store = Storage.prototype.setItem;
     let fail = true;
-    window.addEventListener("allow-history-storage-for-test", () => {
-      fail = false;
-    });
+    // Restore storage at the click so a late graph-layout autosave cannot
+    // recover first and remove the retry control mid-interaction.
+    document.addEventListener(
+      "click",
+      (event) => {
+        if (
+          event.target instanceof Element &&
+          event.target.closest("button")?.textContent?.trim() === "Retry save"
+        )
+          fail = false;
+      },
+      true,
+    );
     Storage.prototype.setItem = function (key: string, value: string) {
       if (fail && key.startsWith("knowledge-assistant:exploration:"))
         throw new DOMException(
@@ -190,9 +200,6 @@ test("shows a storage quota failure and saves the active graph when retried", as
   ).toBeVisible();
   await expect(page.getByText(/Browser storage is full/)).toBeVisible();
   await expect(page.getByText("No saved explorations yet.")).toBeVisible();
-  await page.evaluate(() =>
-    window.dispatchEvent(new Event("allow-history-storage-for-test")),
-  );
   await page.getByRole("button", { name: "Retry save" }).click();
   await expect(
     page

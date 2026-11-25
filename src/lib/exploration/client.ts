@@ -47,6 +47,18 @@ export async function postExploration<T>(
     if (response.status === 504) throw new Error(timeoutMessage);
     const parsed = apiErrorSchema.safeParse(data);
     const code = parsed.success ? parsed.data.error.code : "";
+    if (code === "rate_limited" && response.status === 429) {
+      const retry = response.headers.get("Retry-After") ?? "";
+      throw new Error(
+        /^[1-9][0-9]{0,3}$/.test(retry) && Number(retry) <= 3_600
+          ? `Too many requests. Try again in ${retry} ${retry === "1" ? "second" : "seconds"}.`
+          : "Too many requests. Please try again later.",
+      );
+    }
+    if (code === "rate_limit_unavailable" && response.status === 503)
+      throw new Error(
+        "The service is temporarily unavailable. Please try again shortly.",
+      );
     if (response.status === 429) {
       throw new Error(
         code === "service_busy"

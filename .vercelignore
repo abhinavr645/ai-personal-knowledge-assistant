@@ -1,0 +1,7 @@
+/.env*
+/.next/
+/.playwright-mcp/
+/playwright-report/
+/test-results/
+/playwright/.auth/
+*.pem

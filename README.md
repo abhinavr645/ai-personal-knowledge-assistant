@@ -15,7 +15,8 @@ branches to the current workspace, then reopen saved work from your browser.
 - Vitest, jsdom, React Testing Library, jest-dom, MSW, Playwright Test, and
   axe-core for automated checks, plus Playwright MCP for interactive inspection
 - ESLint and Prettier for code quality, Git and GitHub for version control, and
-  Vercel for eventual deployment
+  Vercel for protected staging and production hosting
+- Upstash Redis REST for shared admission budgets on hosted requests
 
 ## Getting started
 
@@ -59,15 +60,25 @@ Playwright MCP provides a separate browser for interactive inspection.
 Use `.env.example` as the template for a local `.env.local` file. The labeled
 example graph and mocked tests run without credentials.
 
-| Variable            | Use                                                                    |
-| ------------------- | ---------------------------------------------------------------------- |
-| `GEMINI_API_KEY`    | Required on the server for `POST /api/search` and `POST /api/related`. |
-| `GEMINI_MODEL`      | Optional Gemini model override. Defaults to `gemini-3.8-flash`.        |
-| `TAVILY_API_KEY`    | Required for Tavily web search and domain-restricted official docs.    |
-| `WIKIPEDIA_CONTACT` | Optional public operator email or project URL sent in the User-Agent.  |
+| Variable                         | Use                                                                                      |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `GEMINI_API_KEY`                 | Required for `POST /api/search` and `POST /api/related`.                                 |
+| `GEMINI_MODEL`                   | Optional structured-output model override. Defaults to `gemini-3.8-flash`.               |
+| `TAVILY_API_KEY`                 | Required for hosted acceptance testing of web and official documentation retrieval.      |
+| `WIKIPEDIA_CONTACT`              | Optional public operator email or project URL sent in the User-Agent.                    |
+| `UPSTASH_REDIS_REST_URL`         | Required on Vercel. HTTPS database URL from the Redis REST settings.                     |
+| `UPSTASH_REDIS_REST_TOKEN`       | Required on Vercel. Use the read/write REST token.                                       |
+| `RATE_LIMIT_NAMESPACE`           | Required on Vercel. Use a stable lowercase name of up to 48 letters, digits, or hyphens. |
+| `RATE_LIMIT_REQUESTS_PER_MINUTE` | Optional per-client budget. Defaults to 12.                                              |
+| `RATE_LIMIT_REQUESTS_PER_HOUR`   | Optional shared budget across all clients in a namespace. Defaults to 300.               |
 
-Git ignores `.env.local`. Keep keys in server-side code and omit the
-`NEXT_PUBLIC_` prefix for credentials.
+Git ignores `.env.local`. Vercel upload exclusions also cover local
+environment files and browser artifacts. Keep keys server-side and omit the
+`NEXT_PUBLIC_` prefix. Use [Google AI Studio](https://aistudio.google.com/app/apikey) and the
+[Tavily dashboard](https://app.tavily.com/) to issue environment-specific keys.
+Local `pnpm dev` works without the hosted limiter. A production build serves
+the dashboard locally, while valid provider requests require hosted limiter
+configuration and trusted Vercel ingress.
 
 ## Retrieval API
 
@@ -241,7 +252,8 @@ Invalid fields or JSON return 400, oversized bodies return 413, and invalid
 content types return 415. Retrieval and Gemini failures return the same safe
 `{ error: { code, message }, retrieval? }` envelope as search. The browser
 validates both endpoints' responses, times requests out after 32 seconds, and
-offers retry for failed expansions. The retrieval-only API runs independently.
+offers retry for failed expansions. The retrieval-only API runs independently
+of Gemini and shares the same admission budgets.
 
 ### Exploration tests
 
@@ -342,13 +354,141 @@ also exercises the mobile sidebar and recovery after a simulated quota error.
   detected for the prior lockfile.
   [Maintainer advisory](https://github.com/isaacs/minimatch/security/advisories/GHSA-g3hv-75wg-m249)
 
-The admission limit is per worker. It controls simultaneous work and does not
-enforce client quotas across workers or over time. Public deployment still
-requires an upstream abuse limit or access controls, provider quota checks,
-and live verification of a general query, a technical query, and an expansion.
-Phase 9 used mocked provider responses. Live verification remains pending
-because local Gemini credentials were unavailable and live calls were not
-authorized.
+### Hosted rate limiting
+
+The eight-request cap controls concurrent work in each worker. Once a POST
+passes input validation and obtains a worker slot, one atomic Redis command
+checks and increments the client and shared budgets before provider calls.
+Both counters live in the same Upstash database and namespace across workers.
+Vercel's WAF is available as an edge layer. The Redis check supplies the
+application's structured error and fails closed when Redis is unavailable.
+[Vercel WAF rate limiting](https://vercel.com/docs/vercel-firewall/vercel-waf/rate-limiting)
+[Upstash REST API](https://upstash.com/docs/redis/features/restapi)
+
+Only the Vercel-provided `x-vercel-forwarded-for` header supplies the client
+identity. Enable Vercel system variables and use direct Vercel ingress. The
+application accepts one IPv4 address or IPv6 `/64` bucket, normalizes
+IPv4-mapped IPv6, and uses a keyed digest as the Redis identity. Redis stores
+short-lived counters. Request bodies, raw addresses, and credentials are
+excluded from counter keys and application limiter logs. Clients behind a
+shared network can reach their limit together.
+[Vercel request headers](https://vercel.com/docs/headers/request-headers)
+
+Clients over either budget receive HTTP 429, `error.code: "rate_limited"`,
+and a numeric `Retry-After` for the remaining window. Missing or invalid
+identity, missing configuration, Redis timeouts, and invalid Redis responses
+return HTTP 503 with `error.code: "rate_limit_unavailable"`. The check has a
+two-second deadline. The default shared budget permits up to 300 admitted
+requests per active hour-long window. Each admitted request can make up to
+three concurrent retrieval calls and one generation attempt. These counts
+bound application calls per window. Provider usage and billing still need
+separate quotas and review.
+
+### Protected staging on Vercel
+
+1. Choose the private GitHub repository that should hold the project. If the
+   local repository has no remote, add the approved repository as `origin`.
+   Review and commit the deployment changes before pushing a staging branch.
+2. From the repository root run `pnpm dlx vercel login` and
+   `pnpm dlx vercel link`. Select or create the intended staging project.
+   In its settings, enable Vercel Authentication for all deployments where
+   available. With Standard Protection, use the protected Preview scope and
+   keep production domains unassigned to staging. Confirm protection before
+   connecting GitHub with `pnpm dlx vercel git connect`. The repository's
+   `vercel.json` disables automatic Git deployments so releases are deliberate.
+3. Use the **Next.js** preset, the repository root, Node.js **26.x**,
+   `pnpm build`, and the preset's default output directory. Enable Fluid
+   Compute. In the Preview build environment enable
+   `ENABLE_EXPERIMENTAL_COREPACK=1` and leave the Install Command at its
+   default so Vercel uses the pnpm pin in `package.json`. Confirm the build log
+   uses pnpm 12.23.0 and the checked-in lockfile. Route Functions set maximum
+   durations of 40 seconds for search and expansion and 20 for retrieval.
+   [Next.js on Vercel](https://vercel.com/docs/frameworks/full-stack/nextjs)
+   [Vercel Node.js versions](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions)
+   [Build configuration](https://vercel.com/docs/builds/configure-a-build)
+4. In the Upstash Console create a dedicated staging Redis database with
+   a primary region close to the Vercel Function region and no read regions.
+   Keep eviction disabled. Set its REST URL and read/write token as server
+   environment variables scoped to **Preview**. Set
+   `RATE_LIMIT_NAMESPACE=knowledge-staging` and add the Preview Gemini and
+   Tavily keys. Confirm **Automatically expose System Environment Variables**
+   is enabled so Functions receive the platform's `VERCEL=1` marker.
+   [Upstash setup](https://upstash.com/docs/redis/overall/getstarted)
+   [Vercel environment variables](https://vercel.com/docs/environment-variables)
+5. Deploy using `pnpm dlx vercel deploy` from the reviewed staging checkout.
+   Verify the Preview URL and its three POST routes reject an unauthenticated
+   browser before sharing the address. Use an authorized browser for the
+   acceptance tests. Check that HTTP redirects to HTTPS and that the HTTPS
+   response includes HSTS, the app's CSP, and MIME-sniffing protection.
+   [Deployment Protection](https://vercel.com/docs/deployment-protection)
+   [Vercel response headers](https://vercel.com/docs/headers/response-headers)
+
+### Live acceptance and production release
+
+Run the following on protected staging with its real provider keys. Start with
+three provider-backed requests and stop on a credential or model error.
+
+1. Search **Photosynthesis**. Check that the API returns HTTP 200 with
+   `status: "ok"`, a validated explanation, valid graph endpoints, and
+   citations from Wikipedia or Tavily. Inspect `retrieval.providers`,
+   `retrieval.errors`, and the cited source metadata to record which provider
+   actually succeeded.
+2. Search **React useState**. Verify the explanation and at least one relevant
+   official React documentation citation. Open the source and confirm the
+   displayed relationship endpoints exist. A provider listed in metadata may
+   have failed or returned no usable records.
+3. Expand one concept from the technical result. Inspect the original topic,
+   selected concept, neighbors, and existing concept IDs in the request.
+   Confirm the new graph stays connected, existing nodes and edges remain,
+   and new citations resolve to their supplied sources. Record request
+   duration and the safe server stage timings for retrieval and generation.
+
+Record GitHub as pending if those three requests never route to it. When it
+is part of the release criteria, verify it independently with one
+`POST /api/retrieve` for `vercel/next.js`. Check provider failure paths with
+mocks or an isolated credential-free deployment. For hosted rate-limit
+verification, use a dedicated test Preview and Redis namespace with low
+limits and omit the Gemini and Tavily keys. A technical search or expansion
+will stop at the Gemini preflight after admission. Verify accepted requests
+and a subsequent HTTP 429 with `Retry-After` across all three endpoints.
+Use hosting diagnostics to establish separate worker instances where
+available. Record the cross-instance check as pending if worker attribution
+is unavailable. Verify a limiter outage in that isolated deployment.
+
+Replay the browser journey on mobile and desktop. Confirm source links,
+selection, expansion, local history after refresh, rename and deletion.
+Inspect the Network and Console panels and safe runtime logs. Record endpoint
+status, latency, provider status, and evidence counts. Keep authorization
+headers, secret values, and raw provider payloads out of reports. Apply the
+browser bundle secret scan to the production build as well.
+
+For production, set separate **Production** provider keys and a dedicated
+Redis database and namespace. Review quotas and establish the spend
+thresholds before promotion. After staging acceptance, build the production
+candidate with `pnpm dlx vercel deploy --prod --skip-domain`. Verify access
+protection on its generated URL and repeat production configuration and
+browser smoke checks there. Promote the reviewed candidate with
+`pnpm dlx vercel promote <candidate-url>` only once all public release
+checks pass. Production and Preview use separate browser origins and
+therefore separate local history.
+[Vercel deployment CLI](https://vercel.com/docs/cli/deploy)
+
+### Verification status
+
+Two separate local production-build processes shared a live, disposable
+Upstash database. With synthetic identities and provider keys disabled, the
+per-client and shared limits returned 429 across processes with the expected
+retry windows. Missing identity returned 503. Redis-backed requests in this
+small check took 245–831 ms end to end, including local routing and credential
+checks. The probe did not measure retrieval, generation, or Vercel latency.
+
+The local production build and mocked browser suite exercise retrieval,
+generation, expansion, failure states, and browser-local history. The
+workspace is awaiting a GitHub remote, a linked Vercel project, and the
+staging environment variables. Protected staging, live Gemini and retrieval,
+hosted expansion, Vercel ingress and HTTPS checks, and browser verification
+on the deployed URL are pending. Public release is blocked on those checks
+and on shared-limit verification in the actual hosting environment.
 
 ### Phase 9 graph benchmark
 
@@ -367,10 +507,10 @@ The benchmark measures local graph updates with mocked API responses.
 
 ## Status and planned phases
 
-Phase 9 hardens the existing search, recursive expansion, and local history
-flows. Vitest covers request bounds, provider behavior, concurrent expansions,
-and storage recovery. Playwright runs axe and checks layout at 320, 375, 768,
-1024, and 1440 pixels.
+Phase 10 adds Vercel deployment configuration and a shared admission limit.
+Vitest covers request bounds, provider behavior, concurrent expansions, and
+storage recovery. Playwright runs axe and checks layout at 320, 375, 768,
+1024, and 1440 pixels. The hosted acceptance checklist above governs release.
 
 The proposed ten-phase roadmap is:
 

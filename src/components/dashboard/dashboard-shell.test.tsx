@@ -164,6 +164,24 @@ test.each([
     "The service is busy",
   ],
   [
+    "shared rate limit",
+    () =>
+      HttpResponse.json(
+        { error: { code: "rate_limited", message: "private" } },
+        { status: 429, headers: { "Retry-After": "4" } },
+      ),
+    "Try again in 4 seconds",
+  ],
+  [
+    "shared limiter outage",
+    () =>
+      HttpResponse.json(
+        { error: { code: "rate_limit_unavailable", message: "private" } },
+        { status: 503 },
+      ),
+    "The service is temporarily unavailable",
+  ],
+  [
     "invalid response",
     () => HttpResponse.json({ ...javascript, knowledge: null }),
     "Search returned an invalid response",

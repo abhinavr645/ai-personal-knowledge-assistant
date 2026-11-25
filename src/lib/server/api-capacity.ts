@@ -1,6 +1,7 @@
 import "server-only";
 
 import { queryJson } from "./query-request";
+import { enforceRateLimit } from "./rate-limit";
 
 export const maxConcurrentApiRequests = 8;
 // Route handlers may be separate bundles in the same server worker.
@@ -29,4 +30,13 @@ export async function withApiCapacity(run: () => Promise<Response>) {
     worker.knowledgeAssistantRequests =
       (worker.knowledgeAssistantRequests ?? 1) - 1;
   }
+}
+
+export function withApiAdmission(
+  request: Request,
+  run: () => Promise<Response>,
+) {
+  return withApiCapacity(
+    async () => (await enforceRateLimit(request)) ?? run(),
+  );
 }

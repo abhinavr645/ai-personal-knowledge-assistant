@@ -1,12 +1,16 @@
 import { retrieve } from "@/lib/retrieval/retrieval-service";
-import { withApiCapacity } from "@/lib/server/api-capacity";
+import { withApiAdmission } from "@/lib/server/api-capacity";
 import { parseQueryRequest, queryJson } from "@/lib/server/query-request";
+
+export const maxDuration = 20;
 
 export async function POST(request: Request) {
   const parsed = await parseQueryRequest(request);
   if ("response" in parsed) return parsed.response;
 
-  return withApiCapacity(() => retrieveResponse(parsed.query, request.signal));
+  return withApiAdmission(request, () =>
+    retrieveResponse(parsed.query, request.signal),
+  );
 }
 
 async function retrieveResponse(query: string, signal: AbortSignal) {
